@@ -23,7 +23,26 @@ resource "helm_release" "argocd" {
   version    = "3.35.4"
 }
 
+resource "null_resource" "argocd_crds_ready" {
+  depends_on = [helm_release.argocd]
+
+  provisioner "local-exec" {
+    command = <<EOT
+      echo "Waiting for ArgoCD Application CRD..."
+      for i in {1..20}; do
+        kubectl get crd applications.argoproj.io && break
+        echo "Waiting 5s..."
+        sleep 5
+      done
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
 resource "kubernetes_manifest" "argocd_nginx_app" {
+  depends_on = [
+    null_resource.argocd_crds_ready
+  ]
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
@@ -53,6 +72,9 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
 }
 
 resource "kubernetes_manifest" "argocd_helm_nginx_app" {
+  depends_on = [
+    null_resource.argocd_crds_ready
+  ]
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
