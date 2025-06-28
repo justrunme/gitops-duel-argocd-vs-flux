@@ -42,6 +42,10 @@ resource "null_resource" "flux_crds_ready" {
     command = <<EOT
       echo "⏳ Waiting for FluxCD HelmRelease CRD to be established..."
       kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=90s
+      echo "✅ FluxCD HelmRelease CRD ready"
+      echo "--- FluxCD HelmRelease CRD details ---"
+      kubectl get crd helmreleases.helm.toolkit.fluxcd.io -o yaml
+      echo "------------------------------------"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }

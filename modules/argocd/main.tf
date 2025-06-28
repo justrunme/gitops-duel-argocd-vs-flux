@@ -45,6 +45,9 @@ resource "null_resource" "argocd_crds_ready" {
       echo "CRD established. Waiting 10s to let API server register kind..."
       sleep 10
       echo "✅ ArgoCD CRD ready"
+      echo "--- ArgoCD Application CRD details ---"
+      kubectl get crd applications.argoproj.io -o yaml
+      echo "------------------------------------"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
