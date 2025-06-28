@@ -17,10 +17,22 @@ resource "kubernetes_namespace" "argocd" {
 
 resource "helm_release" "argocd" {
   name       = "argocd"
-  repository = "https://argoproj.github.io/argo-helm"
+  namespace  = "argocd"
   chart      = "argo-cd"
-  namespace  = kubernetes_namespace.argocd.metadata[0].name
-  version    = "3.35.4"
+  repository = "https://argoproj.github.io/argo-helm"
+  version    = "5.51.6"
+
+  create_namespace = true
+
+  values = [
+    yamlencode({
+      server = {
+        service = {
+          type = "ClusterIP"
+        }
+      }
+    })
+  ]
 }
 
 resource "null_resource" "argocd_crds_ready" {
@@ -28,43 +40,38 @@ resource "null_resource" "argocd_crds_ready" {
 
   provisioner "local-exec" {
     command = <<EOT
-      echo "⏳ Waiting for ArgoCD Application CRD to be installed..."
-      for i in {1..30}; do
-        kubectl get crd applications.argoproj.io >/dev/null 2>&1 && break
-        echo "Waiting 5s for CRD..."
-        sleep 5
-      done
+      echo "⏳ Waiting for ArgoCD Application CRD to be established..."
+      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=150s
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
 }
 
 resource "kubernetes_manifest" "argocd_nginx_app" {
-  depends_on = [
-    null_resource.argocd_crds_ready
-  ]
+  depends_on = [null_resource.argocd_crds_ready]
+
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
       name      = "nginx-app"
-      namespace = kubernetes_namespace.argocd.metadata[0].name
+      namespace = "argocd"
     }
     spec = {
-      destination = {
-        namespace = "default"
-        server    = "https://kubernetes.default.svc"
-      }
       project = "default"
       source = {
-        path = "apps/argocd/nginx"
-        repoURL = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+        repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
         targetRevision = "HEAD"
+        path           = "apps/argocd/nginx"
+      }
+      destination = {
+        server    = "https://kubernetes.default.svc"
+        namespace = "default"
       }
       syncPolicy = {
         automated = {
-          prune = true
-          selfHeal = true
+          prune     = true
+          selfHeal  = true
         }
       }
     }
@@ -72,36 +79,30 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
 }
 
 resource "kubernetes_manifest" "argocd_helm_nginx_app" {
-  depends_on = [
-    null_resource.argocd_crds_ready
-  ]
+  depends_on = [null_resource.argocd_crds_ready]
+
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
       name      = "helm-nginx-app"
-      namespace = kubernetes_namespace.argocd.metadata[0].name
+      namespace = "argocd"
     }
     spec = {
-      destination = {
-        namespace = "default"
-        server    = "https://kubernetes.default.svc"
-      }
       project = "default"
       source = {
-        path = "apps/argocd/helm-nginx"
-        repoURL = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+        repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
         targetRevision = "HEAD"
-        helm = {
-          valueFiles = [
-            "values.yaml"
-          ]
-        }
+        path           = "apps/argocd/helm-nginx"
+      }
+      destination = {
+        server    = "https://kubernetes.default.svc"
+        namespace = "default"
       }
       syncPolicy = {
         automated = {
-          prune = true
-          selfHeal = true
+          prune     = true
+          selfHeal  = true
         }
       }
     }
