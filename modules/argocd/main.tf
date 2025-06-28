@@ -20,10 +20,14 @@ resource "null_resource" "argocd_crd_pre_install" {
     command = <<EOT
       echo "Applying ArgoCD Application CRD directly..."
       curl -sL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml | kubectl apply -f -
-      echo "Waiting for CRD to be established..."
-      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
-      echo "CRD established. Sleeping 5s for API server registration..."
-      sleep 5
+      echo "Waiting for CRD to be recognized by API server..."
+      for i in {1..30}; do
+        kubectl get crd applications.argoproj.io >/dev/null 2>&1 && break
+        echo "CRD not yet listed, waiting 5s..."
+        sleep 5
+      done
+      echo "CRD recognized. Sleeping 10s for API server registration..."
+      sleep 10
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
