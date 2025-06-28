@@ -79,6 +79,17 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
+      echo " Verifying HelmRelease resource availability in helm.toolkit.fluxcd.io/v2..."
+      for i in {1..30}; do
+        if kubectl get crd helmreleases.helm.toolkit.fluxcd.io >/dev/null 2>&1 && \
+           kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2/helmreleases" >/dev/null 2>&1; then
+          echo "✅ HelmRelease resource is fully ready"
+          break
+        fi
+        echo "⏳ HelmRelease not yet available, sleeping..."
+        sleep 5
+      done
+
       echo " Creating GitRepository source"
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
