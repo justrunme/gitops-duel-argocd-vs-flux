@@ -118,4 +118,13 @@ resource "null_resource" "flux_sync" {
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
+
+  provisioner "local-exec" {
+    when = destroy
+    command = <<EOT
+      flux get kustomizations -A || true
+      flux logs --kind=Kustomization --name=helm-nginx -n flux-system || true
+      kubectl get helmrelease -A || true
+    EOT
+  }
 }
