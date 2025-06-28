@@ -70,7 +70,7 @@ resource "null_resource" "flux_sync" {
       kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=120s
 
       echo " Waiting for API group helm.toolkit.fluxcd.io/v2 to become available..."
-      for i in {1..30}; do
+      for i in {1..60}; do
         if kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2" >/dev/null 2>&1; then
           echo "✅ API group is available"
           break
@@ -99,7 +99,7 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
-      echo " Creating GitRepository source..."
+      echo " Applying GitRepository..."
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
         --branch=main \
