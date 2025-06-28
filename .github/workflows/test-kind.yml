@@ -21,6 +21,9 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
+    - name: Install Flux CLI
+      run: curl -s https://fluxcd.io/install.sh | sudo bash
+
     - name: Terraform Apply
       run: terraform apply -auto-approve -var="flux_ssh_private_key=${{ secrets.FLUX_SSH_PRIVATE_KEY }}"
 
@@ -31,7 +34,7 @@ jobs:
 
     - name: Verify FluxCD Installation
       run: |
-        ./bin/flux get all -A
+        flux get all -A
         kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
         kubectl wait --for=condition=ready pod -l app=kustomize-controller -n flux-system --timeout=300s
 
