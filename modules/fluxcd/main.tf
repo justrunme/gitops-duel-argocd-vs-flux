@@ -28,7 +28,8 @@ resource "helm_release" "flux" {
       name  = "installCRDs"
       value = "true"
     },
-    {n      name  = "helmController.enabled"
+    {
+      name  = "helmController.enabled"
       value = "true"
     }
   ]
