@@ -26,7 +26,12 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
-    - name: Terraform Apply
+    - name: Terraform Apply - Step 1 (ArgoCD Helm and CRD wait)
+      run: |
+        time terraform apply -target=module.argocd.helm_release.argocd -auto-approve
+        time terraform apply -target=module.argocd.null_resource.argocd_crds_ready -auto-approve
+
+    - name: Terraform Apply - Step 2 (All other resources)
       run: time terraform apply -auto-approve
 
     - name: Verify ArgoCD Installation
