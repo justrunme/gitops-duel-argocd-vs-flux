@@ -108,9 +108,14 @@ resource "null_resource" "flux_sync" {
       echo "⏳ Waiting for GitRepository to reconcile..."
       sleep 15
 
-      echo " Applying HelmRelease manifest directly with validation disabled..."
-      kubectl apply -f ./apps/flux/helm-nginx/helmrelease.yaml -n flux-system --validate=false
-EOT
+      echo " Applying Kustomization for HelmRelease..."
+      flux create kustomization helm-nginx \
+        --source=GitRepository/local-repo \
+        --path=./apps/flux/helm-nginx \
+        --prune=true \
+        --interval=1m \
+        --namespace=flux-system
+    EOT
     interpreter = ["/bin/bash", "-c"]
   }
 }
