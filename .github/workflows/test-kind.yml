@@ -40,14 +40,17 @@ jobs:
     - name: Terraform Apply - Step 2 (All other resources)
       run: time terraform apply -auto-approve
 
+    - name: Wait for ArgoCD server to be ready
+      run: kubectl wait --for=condition=available --timeout=120s deployment/argocd-server -n argocd
+
     - name: Port-forward ArgoCD API
-      run: kubectl port-forward svc/argocd-server -n argocd 8080:443 & # Run in background
-      timeout-minutes: 1
+      run: |
+        nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > /dev/null 2>&1 &
+        disown
+        sleep 20
 
     - name: Login to ArgoCD
-      run: |
-        sleep 10 # Give port-forward time to establish
-        argocd login localhost:8080 --insecure --username admin --password admin
+      run: argocd login localhost:8080 --insecure --username admin --password admin
 
     - name: Verify ArgoCD Installation
       run: |
