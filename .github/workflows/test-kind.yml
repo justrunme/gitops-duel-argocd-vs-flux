@@ -1,0 +1,48 @@
+name: Test Infrastructure on KinD
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.x
+
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve -var="flux_ssh_private_key=${{ secrets.FLUX_SSH_PRIVATE_KEY }}"
+
+    - name: Verify ArgoCD Installation
+      run: |
+        kubectl get all -n argocd
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+
+    - name: Verify FluxCD Installation
+      run: |
+        ./bin/flux get all -A
+        kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=kustomize-controller -n flux-system --timeout=300s
+
+    - name: Verify Nginx Application (ArgoCD)
+      run: |
+        kubectl get deployment nginx -n default
+        kubectl get service nginx -n default
+        kubectl wait --for=condition=available deployment/nginx -n default --timeout=300s
+
+    - name: Verify Nginx Application (FluxCD)
+      run: |
+        kubectl get deployment nginx -n flux-system
+        kubectl get service nginx -n flux-system
+        kubectl wait --for=condition=available deployment/nginx -n flux-system --timeout=300s
