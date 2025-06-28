@@ -28,10 +28,10 @@ resource "null_resource" "argocd_crds_ready" {
 
   provisioner "local-exec" {
     command = <<EOT
-      echo "Waiting for ArgoCD Application CRD..."
-      for i in {1..20}; do
-        kubectl get crd applications.argoproj.io && break
-        echo "Waiting 5s..."
+      echo "⏳ Waiting for ArgoCD Application CRD to be installed..."
+      for i in {1..30}; do
+        kubectl get crd applications.argoproj.io >/dev/null 2>&1 && break
+        echo "Waiting 5s for CRD..."
         sleep 5
       done
     EOT
