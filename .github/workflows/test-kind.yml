@@ -40,14 +40,31 @@ jobs:
         kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
         kubectl wait --for=condition=ready pod -l app=kustomize-controller -n flux-system --timeout=300s
 
-    - name: Verify Nginx Application (ArgoCD)
+    - name: Verify Nginx Application (ArgoCD Kustomize)
       run: |
         kubectl get deployment nginx -n default
         kubectl get service nginx -n default
         kubectl wait --for=condition=available deployment/nginx -n default --timeout=300s
 
-    - name: Verify Nginx Application (FluxCD)
+    - name: Verify ArgoCD Helm App
+      run: |
+        argocd app list
+        kubectl get deployment helm-nginx -n default
+        kubectl wait --for=condition=available deployment/helm-nginx -n default --timeout=300s
+
+    - name: Verify FluxCD Helm App
+      run: |
+        flux get kustomizations -A
+        kubectl get deployment helm-nginx -n flux-system
+        kubectl wait --for=condition=available deployment/helm-nginx -n flux-system --timeout=300s
+
+    - name: Verify Nginx Application (FluxCD Kustomize)
       run: |
         kubectl get deployment nginx -n flux-system
         kubectl get service nginx -n flux-system
         kubectl wait --for=condition=available deployment/nginx -n flux-system --timeout=300s
+
+    - name: Verify All Pods
+      run: |
+        kubectl get pods -n default
+        kubectl get pods -n flux-system
