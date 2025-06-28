@@ -69,21 +69,15 @@ resource "null_resource" "flux_sync" {
       echo "⏳ Waiting for HelmRelease CRD to be established..."
       kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=120s
 
-      echo " Verifying API availability for helm.toolkit.fluxcd.io..."
+      echo " Verifying full readiness of helm.toolkit.fluxcd.io/v2 API..."
       for i in {1..20}; do
-        if kubectl api-resources --api-group=helm.toolkit.fluxcd.io | grep -q HelmRelease; then
-          echo '✅ API is now available'
+        if kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2" >/dev/null 2>&1; then
+          echo "✅ v2 API group is fully available"
           break
         fi
-        echo "⏳ API not available yet, sleeping..."
+        echo "⏳ Still waiting for v2 API group to be ready..."
         sleep 5
       done
-
-      echo " Waiting extra 10s for API to become fully operational..."
-      sleep 10
-
-      echo " Double-check: Can we get HelmReleases?"
-      kubectl get helmreleases.helm.toolkit.fluxcd.io --all-namespaces || echo "⚠️ Still not responding, but continuing..."
 
       echo " Creating GitRepository source"
       flux create source git local-repo \
