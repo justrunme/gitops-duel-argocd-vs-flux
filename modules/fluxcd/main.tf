@@ -35,15 +35,28 @@ resource "helm_release" "flux" {
   ]
 }
 
+resource "null_resource" "flux_crds_ready" {
+  depends_on = [helm_release.flux]
+
+  provisioner "local-exec" {
+    command = <<EOT
+      echo "⏳ Waiting for FluxCD HelmRelease CRD to be established..."
+      kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=90s
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+  }
+}
+
 resource "null_resource" "flux_sync" {
   depends_on = [
-    helm_release.flux
+    null_resource.flux_crds_ready
   ]
 
   provisioner "local-exec" {
     command = <<EOT
       kubectl wait --for=condition=Available --timeout=120s deployment/source-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/kustomize-controller -n flux-system
+      kubectl wait --for=condition=Available --timeout=120s deployment/helm-controller -n flux-system
 
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \

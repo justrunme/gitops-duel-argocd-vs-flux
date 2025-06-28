@@ -68,3 +68,9 @@ jobs:
       run: |
         kubectl get pods -n default
         kubectl get pods -n flux-system
+
+    - name: Show all resources in argocd namespace
+      run: kubectl get all -n argocd
+
+    - name: Show all resources in flux-system namespace
+      run: kubectl get all -n flux-system
