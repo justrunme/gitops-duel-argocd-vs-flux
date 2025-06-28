@@ -67,11 +67,10 @@ resource "null_resource" "flux_sync" {
       kubectl wait --for=condition=Available --timeout=120s deployment/helm-controller -n flux-system
 
       # Wait for HelmRelease CRD to be available in the cluster
-      echo " Waiting for HelmRelease CRD to be ready..."
-      for i in {1..20}; do
-        kubectl get crd helmreleases.helm.toolkit.fluxcd.io >/dev/null 2>&1 && break
-        sleep 5
-      done
+      echo "⏳ Waiting for HelmRelease CRD to be established..."
+      kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=120s
+      echo "CRD established. Sleeping 5s for API server registration..."
+      sleep 5
 
       # Create GitRepository source
       flux create source git local-repo \
