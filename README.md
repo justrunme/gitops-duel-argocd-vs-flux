@@ -1,5 +1,7 @@
 # GitOps Duel: ArgoCD vs Flux
 
+![Terraform CI](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml/badge.svg)
+
 This repository demonstrates a side-by-side comparison of ArgoCD and Flux, two popular GitOps tools for Kubernetes.
 
 ## Architecture
