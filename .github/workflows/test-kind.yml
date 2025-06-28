@@ -44,11 +44,11 @@ jobs:
       run: |
         kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
 
-    - name: Port-forward ArgoCD API in background
+    - name: Start kubectl proxy
       run: |
-        nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > port-forward.log 2>&1 &
-        echo $! > port_forward.pid
-        sleep 30  # Wait for port-forward to stabilize
+        kubectl proxy --port=8080 > proxy.log 2>&1 &
+        echo $! > proxy_pid.txt
+        sleep 10
 
     - name: Extract ArgoCD admin password
       id: get-password
@@ -59,7 +59,7 @@ jobs:
     - name: Wait until ArgoCD API is reachable
       run: |
         for i in {1..10}; do
-          if curl -k https://localhost:8080 > /dev/null 2>&1; then
+          if curl -k http://127.0.0.1:8080/api/v1/version > /dev/null 2>&1; then
             echo "✅ ArgoCD API is reachable"
             break
           fi
@@ -69,7 +69,7 @@ jobs:
 
     - name: Login to ArgoCD
       run: |
-        argocd login localhost:8080 --insecure --username admin --password "$ARGOCD_PASSWORD"
+        argocd login 127.0.0.1:8080 --grpc-web --insecure --username admin --password "$ARGOCD_PASSWORD"
 
     - name: Verify ArgoCD Installation
       run: |
