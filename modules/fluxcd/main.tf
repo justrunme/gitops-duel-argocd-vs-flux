@@ -66,42 +66,30 @@ resource "null_resource" "flux_sync" {
       kubectl wait --for=condition=Available --timeout=120s deployment/kustomize-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/helm-controller -n flux-system
 
-      echo "⏳ Waiting for HelmRelease CRD to be established..."
+      echo " Waiting for HelmRelease CRD to be established..."
       kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=120s
 
-      echo " Verifying full readiness of helm.toolkit.fluxcd.io/v2 API..."
-      for i in {1..20}; do
-        if kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2" >/dev/null 2>&1; then
-          echo "✅ v2 API group is fully available"
-          break
-        fi
-        echo "⏳ Still waiting for v2 API group to be ready..."
-        sleep 5
-      done
-
-      echo " Verifying HelmRelease resource availability in helm.toolkit.fluxcd.io/v2..."
+      echo " Waiting for API group helm.toolkit.fluxcd.io/v2 to become available..."
       for i in {1..30}; do
-        if kubectl get crd helmreleases.helm.toolkit.fluxcd.io >/dev/null 2>&1 && \
-           kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2/helmreleases" >/dev/null 2>&1; then
-          echo "✅ HelmRelease resource is fully ready"
+        if kubectl get --raw="/apis/helm.toolkit.fluxcd.io/v2" >/dev/null 2>&1; then
+          echo "✅ API group is available"
           break
         fi
-        echo "⏳ HelmRelease not yet available, sleeping..."
+        echo "⏳ API group not ready yet..."
         sleep 5
       done
 
-      echo " Creating GitRepository source"
+      echo " Applying GitRepository..."
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
         --branch=main \
         --namespace=flux-system
 
-      echo " Creating HelmRelease"
-      flux create helmrelease helm-nginx \
-        --source=GitRepository/local-repo \
-        --chart=./apps/flux/helm-nginx \
-        --interval=1m \
-        --namespace=flux-system
+      echo "⏳ Waiting for GitRepository to reconcile..."
+      sleep 10
+
+      echo " Applying HelmRelease manifest directly (avoiding flux create)..."
+      kubectl apply -f ./apps/flux/helm-nginx/helmrelease.yaml -n flux-system
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
