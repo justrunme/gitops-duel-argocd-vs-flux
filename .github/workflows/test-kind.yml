@@ -40,29 +40,32 @@ jobs:
     - name: Terraform Apply - Step 2 (All other resources)
       run: time terraform apply -auto-approve
 
-    - name: Wait for ArgoCD server to become available
+    - name: Wait for ArgoCD server to be available
       run: |
         kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
 
-    - name: Port-forward ArgoCD API
+    - name: Port-forward ArgoCD API in background
       run: |
         nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > port-forward.log 2>&1 &
-        sleep 10
-        # Verify port-forward is actually working
-        for i in {1..10}; do
-          if curl -sk https://localhost:8080/healthz > /dev/null; then
-            echo "✅ ArgoCD API is reachable"
-            break
-          fi
-          echo "⏳ Waiting for ArgoCD API..."
-          sleep 5
-        done
+        echo $! > port_forward.pid
+        sleep 30  # Wait for port-forward to stabilize
 
     - name: Extract ArgoCD admin password
       id: get-password
       run: |
         PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
         echo "ARGOCD_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+
+    - name: Wait until ArgoCD API is reachable
+      run: |
+        for i in {1..10}; do
+          if curl -k https://localhost:8080 > /dev/null 2>&1; then
+            echo "✅ ArgoCD API is reachable"
+            break
+          fi
+          echo "⏳ Waiting for ArgoCD API..."
+          sleep 5
+        done
 
     - name: Login to ArgoCD
       run: |
@@ -113,3 +116,19 @@ jobs:
 
     - name: Show all resources in flux-system namespace
       run: kubectl get all -n flux-system
+
+    - name: Output port-forward logs
+      if: always()
+      run: cat port-forward.log || echo "No port-forward log found"
+
+    - name: Get argocd-server service YAML
+      if: always()
+      run: kubectl get svc argocd-server -n argocd -o yaml
+
+    - name: Get argocd-cm ConfigMap YAML
+      if: always()
+      run: kubectl get cm argocd-cm -n argocd -o yaml
+
+    - name: Get argocd-server deployment logs
+      if: always()
+      run: kubectl logs deployment/argocd-server -n argocd
