@@ -55,7 +55,7 @@ jobs:
       run: |
         kubectl describe job argocd-login-test -n argocd || true
         kubectl get pods -n argocd -l job-name=argocd-login-test
-        kubectl logs -n argocd -l job-name=argocd-login-test || true
+        kubectl logs -n argocd -l job-name=argocd-login-test --tail=100 || true
 
     - name: Verify ArgoCD Installation
       run: |
