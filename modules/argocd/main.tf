@@ -15,26 +15,7 @@ resource "kubernetes_namespace" "argocd" {
   }
 }
 
-resource "null_resource" "argocd_crd_pre_install" {
-  provisioner "local-exec" {
-    command = <<EOT
-      echo "Applying ArgoCD Application CRD directly..."
-      curl -sL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml | kubectl apply -f -
-      echo "Waiting for CRD to be recognized by API server..."
-      for i in {1..30}; do
-        kubectl get crd applications.argoproj.io >/dev/null 2>&1 && break
-        echo "CRD not yet listed, waiting 5s..."
-        sleep 5
-      done
-      echo "CRD recognized. Sleeping 10s for API server registration..."
-      sleep 10
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
-}
-
 resource "helm_release" "argocd" {
-  depends_on = [null_resource.argocd_crd_pre_install]
   name       = "argocd"
   namespace  = "argocd"
   chart      = "argo-cd"
