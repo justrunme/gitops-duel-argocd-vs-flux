@@ -89,6 +89,16 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
+      echo " Verifying HelmRelease kind is fully recognized by the API..."
+      for i in {1..10}; do
+        if kubectl explain helmrelease --api-version=helm.toolkit.fluxcd.io/v2 >/dev/null 2>&1; then
+          echo "✅ HelmRelease kind is fully recognized by the API"
+          break
+        fi
+        echo "⏳ Waiting for HelmRelease kind to be ready in explain API..."
+        sleep 5
+      done
+
       echo " Applying GitRepository..."
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
@@ -100,7 +110,7 @@ resource "null_resource" "flux_sync" {
 
       echo " Applying HelmRelease manifest directly..."
       kubectl apply -f ./apps/flux/helm-nginx/helmrelease.yaml -n flux-system
-EOT
+    EOT
     interpreter = ["/bin/bash", "-c"]
   }
 }
