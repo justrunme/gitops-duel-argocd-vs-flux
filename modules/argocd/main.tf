@@ -41,7 +41,10 @@ resource "null_resource" "argocd_crds_ready" {
   provisioner "local-exec" {
     command = <<EOT
       echo "⏳ Waiting for ArgoCD Application CRD to be established..."
-      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=90s
+      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
+      echo "CRD established. Waiting 10s to let API server register kind..."
+      sleep 10
+      echo "✅ ArgoCD CRD ready"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
