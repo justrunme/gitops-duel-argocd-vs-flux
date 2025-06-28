@@ -53,20 +53,33 @@ resource "null_resource" "flux_crds_ready" {
 
 resource "null_resource" "flux_sync" {
   depends_on = [
+    helm_release.flux,
     null_resource.flux_crds_ready
   ]
 
   provisioner "local-exec" {
     command = <<EOT
+      set -e
+
+      # Wait for Flux controllers to become ready
       kubectl wait --for=condition=Available --timeout=120s deployment/source-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/kustomize-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/helm-controller -n flux-system
 
+      # Wait for HelmRelease CRD to be available in the cluster
+      echo " Waiting for HelmRelease CRD to be ready..."
+      for i in {1..20}; do
+        kubectl get crd helmreleases.helm.toolkit.fluxcd.io >/dev/null 2>&1 && break
+        sleep 5
+      done
+
+      # Create GitRepository source
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
         --branch=main \
         --namespace=flux-system
 
+      # Create HelmRelease
       flux create helmrelease helm-nginx \
         --source=GitRepository/local-repo \
         --chart=./apps/flux/helm-nginx \
