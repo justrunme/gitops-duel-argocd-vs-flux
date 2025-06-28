@@ -16,7 +16,7 @@ This project sets up a Kubernetes cluster (Minikube locally, KinD in CI) and dep
   - `apps/argocd/nginx/`: Nginx application deployed via ArgoCD using Kustomize.
   - `apps/argocd/helm-nginx/`: Nginx application deployed via ArgoCD using a Helm chart (replicas: 2).
   - `apps/flux/nginx/`: Nginx application deployed via FluxCD using Kustomize.
-  - `apps/flux/helm-nginx/`: Nginx application deployed via FluxCD using a Helm chart (replicas: 1).
+  - `apps/flux/helm-nginx/`: Nginx application deployed via FluxCD using a Helm chart and Kustomization.
 - `.github/workflows/`: GitHub Actions workflow for testing the setup on a KinD cluster.
 - `docs/`: Contains screenshots and other documentation.
 
