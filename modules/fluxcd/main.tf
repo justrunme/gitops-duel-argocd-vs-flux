@@ -79,6 +79,12 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
+      echo " Waiting extra 10s for API to become fully operational..."
+      sleep 10
+
+      echo " Double-check: Can we get HelmReleases?"
+      kubectl get helmreleases.helm.toolkit.fluxcd.io --all-namespaces || echo "⚠️ Still not responding, but continuing..."
+
       echo " Creating GitRepository source"
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
