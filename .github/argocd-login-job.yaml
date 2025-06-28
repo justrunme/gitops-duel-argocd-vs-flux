@@ -4,25 +4,17 @@ metadata:
   name: argocd-login-test
   namespace: argocd
 spec:
+  backoffLimit: 0
   template:
     spec:
-      serviceAccountName: argocd-server
       containers:
-        - name: argocd
-          image: argoproj/argocd:latest
-          env:
-            - name: ARGOCD_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: argocd-initial-admin-secret
-                  key: password
-          command:
-            - /bin/sh
-            - -c
-            - |
-              echo "Decoded password: $(echo $ARGOCD_PASSWORD | base64 -d)"
-              argocd login argocd-server.argocd.svc.cluster.local \
-                --insecure --username admin \
-                --password $(echo $ARGOCD_PASSWORD | base64 -d) && \
-              argocd app list
+      - name: argocd-cli
+        image: argoproj/argocd:v2.10.2
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Getting ArgoCD password..."
+            export PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
+            echo "Logging into ArgoCD..."
+            argocd login argocd-server.argocd.svc.cluster.local --grpc-web --insecure --username admin --password "$PASSWORD"
       restartPolicy: Never
