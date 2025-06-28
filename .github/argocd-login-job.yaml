@@ -6,14 +6,23 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: argocd-server
       containers:
         - name: argocd
           image: argoproj/argocd:latest
+          env:
+            - name: ARGOCD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: argocd-initial-admin-secret
+                  key: password
           command:
             - /bin/sh
             - -c
             - |
-              sleep 10
-              argocd login argocd-server.argocd.svc.cluster.local --insecure --username admin --password $(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
+              echo "Decoded password: $(echo $ARGOCD_PASSWORD | base64 -d)"
+              argocd login argocd-server.argocd.svc.cluster.local \
+                --insecure --username admin \
+                --password $(echo $ARGOCD_PASSWORD | base64 -d) && \
               argocd app list
       restartPolicy: Never
