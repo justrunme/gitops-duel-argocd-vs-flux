@@ -46,10 +46,9 @@ resource "null_resource" "flux_sync" {
         --branch=main \
         --namespace=flux-system
 
-      flux create kustomization nginx \
+      flux create helmrelease helm-nginx \
         --source=GitRepository/local-repo \
-        --path=./apps/flux/nginx \
-        --prune=true \
+        --chart=./apps/flux/helm-nginx \
         --interval=1m \
         --namespace=flux-system
     EOT
