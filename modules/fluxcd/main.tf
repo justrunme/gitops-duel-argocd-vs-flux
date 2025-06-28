@@ -23,10 +23,12 @@ resource "helm_release" "flux" {
   version          = "2.11.1"
   create_namespace = false
 
-  set {
-    name  = "installCRDs"
-    value = "true"
-  }
+  set = [
+    {
+      name  = "installCRDs"
+      value = "true"
+    }
+  ]
 }
 
 resource "null_resource" "flux_sync" {
@@ -54,4 +56,3 @@ resource "null_resource" "flux_sync" {
     interpreter = ["/bin/bash", "-c"]
   }
 }
-
