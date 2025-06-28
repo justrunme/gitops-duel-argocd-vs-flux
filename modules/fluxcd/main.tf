@@ -28,8 +28,7 @@ resource "helm_release" "flux" {
       name  = "installCRDs"
       value = "true"
     },
-    {
-      name  = "helmController.enabled"
+    {n      name  = "helmController.enabled"
       value = "true"
     }
   ]
@@ -79,6 +78,16 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
+      echo " Waiting for HelmRelease kind to be discoverable..."
+      for i in {1..30}; do
+        if kubectl api-resources | grep -q "helmreleases.*helm.toolkit.fluxcd.io"; then
+          echo "✅ HelmRelease kind is discoverable"
+          break
+        fi
+        echo "⏳ HelmRelease still not discoverable..."
+        sleep 5
+      done
+
       echo " Applying GitRepository..."
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
@@ -86,11 +95,11 @@ resource "null_resource" "flux_sync" {
         --namespace=flux-system
 
       echo "⏳ Waiting for GitRepository to reconcile..."
-      sleep 10
+      sleep 15
 
-      echo " Applying HelmRelease manifest directly (avoiding flux create)..."
+      echo " Applying HelmRelease manifest directly..."
       kubectl apply -f ./apps/flux/helm-nginx/helmrelease.yaml -n flux-system
-    EOT
+EOT
     interpreter = ["/bin/bash", "-c"]
   }
 }
