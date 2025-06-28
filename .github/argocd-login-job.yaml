@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-login-test
+  namespace: argocd
+spec:
+  template:
+    spec:
+      containers:
+        - name: argocd
+          image: argoproj/argocd:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              sleep 10
+              argocd login argocd-server.argocd.svc.cluster.local --insecure --username admin --password $(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
+              argocd app list
+      restartPolicy: Never
