@@ -44,22 +44,13 @@ jobs:
       run: |
         kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
 
-    - name: Proxy ArgoCD via kubectl proxy
+    - name: Port-forward ArgoCD API
       run: |
-        kubectl proxy --port=8080 > proxy.log 2>&1 &
-        echo $! > proxy_pid.txt
+        nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > port-forward.log 2>&1 &
         sleep 10
-
-    - name: Extract ArgoCD admin password
-      id: get-password
-      run: |
-        PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
-        echo "ARGOCD_PASSWORD=$PASSWORD" >> $GITHUB_ENV
-
-    - name: Wait until ArgoCD API is reachable
-      run: |
+        # Verify port-forward is actually working
         for i in {1..10}; do
-          if curl -k https://localhost:8080 > /dev/null 2>&1; then
+          if curl -sk https://localhost:8080/healthz > /dev/null; then
             echo "✅ ArgoCD API is reachable"
             break
           fi
@@ -67,9 +58,15 @@ jobs:
           sleep 5
         done
 
+    - name: Extract ArgoCD admin password
+      id: get-password
+      run: |
+        PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
+        echo "ARGOCD_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+
     - name: Login to ArgoCD
       run: |
-        argocd login 127.0.0.1:8080 --grpc-web --insecure --username admin --password "$ARGOCD_PASSWORD"
+        argocd login localhost:8080 --insecure --username admin --password "$ARGOCD_PASSWORD"
 
     - name: Verify ArgoCD Installation
       run: |
