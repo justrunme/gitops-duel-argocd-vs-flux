@@ -41,13 +41,13 @@ jobs:
       run: time terraform apply -auto-approve
 
     - name: Wait for ArgoCD server to be ready
-      run: kubectl wait --for=condition=available --timeout=120s deployment/argocd-server -n argocd
+      run: kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=180s
 
-    - name: Port-forward ArgoCD API
+    - name: Port-forward ArgoCD API in background
       run: |
-        nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > /dev/null 2>&1 &
-        disown
-        sleep 20
+        kubectl port-forward svc/argocd-server -n argocd 8080:443 > port-forward.log 2>&1 &
+        echo $! > port-forward.pid
+        sleep 15
 
     - name: Extract ArgoCD admin password
       run: |
@@ -55,7 +55,7 @@ jobs:
         echo "ARGOCD_PASSWORD=$PASSWORD" >> $GITHUB_ENV
 
     - name: Login to ArgoCD
-      run: argocd login localhost:8080 --insecure --username admin --password ${{ env.ARGOCD_PASSWORD }}
+      run: argocd login localhost:8080 --insecure --username admin --password "$ARGOCD_PASSWORD"
 
     - name: Verify ArgoCD Installation
       run: |
