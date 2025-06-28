@@ -44,32 +44,11 @@ jobs:
       run: |
         kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
 
-    - name: Start kubectl proxy
+    - name: Run ArgoCD login in-cluster
       run: |
-        kubectl proxy --port=8080 > proxy.log 2>&1 &
-        echo $! > proxy_pid.txt
-        sleep 10
-
-    - name: Extract ArgoCD admin password
-      id: get-password
-      run: |
-        PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
-        echo "ARGOCD_PASSWORD=$PASSWORD" >> $GITHUB_ENV
-
-    - name: Wait until ArgoCD API is reachable
-      run: |
-        for i in {1..10}; do
-          if curl -k http://127.0.0.1:8080/api/v1/version > /dev/null 2>&1; then
-            echo "✅ ArgoCD API is reachable"
-            break
-          fi
-          echo "⏳ Waiting for ArgoCD API..."
-          sleep 5
-        done
-
-    - name: Login to ArgoCD
-      run: |
-        argocd login 127.0.0.1:8080 --grpc-web --insecure --username admin --password "$ARGOCD_PASSWORD"
+        kubectl apply -f .github/argocd-login-job.yaml
+        kubectl wait --for=condition=complete --timeout=120s job/argocd-login-test -n argocd
+        kubectl logs job/argocd-login-test -n argocd
 
     - name: Verify ArgoCD Installation
       run: |
@@ -90,7 +69,6 @@ jobs:
 
     - name: Verify ArgoCD Helm App
       run: |
-        argocd app list
         kubectl get deployment helm-nginx -n default
         kubectl wait --for=condition=available deployment/helm-nginx -n default --timeout=300s
 
