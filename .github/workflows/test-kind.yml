@@ -18,11 +18,13 @@ jobs:
       with:
         terraform_version: 1.x
 
+    - name: Install Flux CLI
+      run: |
+        curl -s https://fluxcd.io/install.sh | sudo bash
+        flux --version
+
     - name: Terraform Init
       run: terraform init
-
-    - name: Install Flux CLI
-      run: curl -s https://fluxcd.io/install.sh | sudo bash
 
     - name: Terraform Apply
       run: terraform apply -auto-approve
