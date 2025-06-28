@@ -99,14 +99,14 @@ resource "null_resource" "flux_sync" {
         sleep 5
       done
 
-      echo " Applying GitRepository..."
+      echo " Creating GitRepository source..."
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
         --branch=main \
         --namespace=flux-system
 
-      echo "⏳ Waiting for GitRepository to reconcile..."
-      sleep 15
+      echo "⏳ Reconciling GitRepository..."
+      flux reconcile source git local-repo -n flux-system --with-source-digests
 
       echo " Applying Kustomization for HelmRelease..."
       flux create kustomization helm-nginx \
@@ -115,6 +115,13 @@ resource "null_resource" "flux_sync" {
         --prune=true \
         --interval=1m \
         --namespace=flux-system
+
+      echo "⏳ Reconciling Kustomization..."
+      flux reconcile kustomization helm-nginx -n flux-system --with-source-digests
+
+      echo "⏳ Waiting for HelmRelease to reconcile..."
+      flux reconcile helmrelease helm-nginx -n flux-system --with-source-digests
+
     EOT
     interpreter = ["/bin/bash", "-c"]
   }

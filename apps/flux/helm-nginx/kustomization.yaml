@@ -3,3 +3,5 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - helmrepository.yaml
+
+timeout: 10m
