@@ -8,14 +8,22 @@ spec:
   template:
     spec:
       containers:
-      - name: argocd-cli
-        image: quay.io/argoproj/argocd:v2.10.2
-        imagePullPolicy: Always
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            echo "Getting ArgoCD password..."
-            PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d)
-            echo "Logging into ArgoCD..."
-            argocd login argocd-server.argocd.svc.cluster.local --grpc-web --insecure --username admin --password "$PASSWORD"
+        - name: argocd-cli
+          image: quay.io/argoproj/argocd:v2.10.2
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Logging into ArgoCD with env password..."
+              argocd login argocd-server.argocd.svc.cluster.local \
+                --grpc-web \
+                --insecure \
+                --username admin \
+                --password "$ARGOCD_PASSWORD"
+          env:
+            - name: ARGOCD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: argocd-initial-admin-secret
+                  key: password
       restartPolicy: Never
