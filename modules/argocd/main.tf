@@ -20,7 +20,9 @@ resource "null_resource" "argocd_crd_pre_install" {
     command = <<EOT
       echo "Applying ArgoCD Application CRD directly..."
       curl -sL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml | kubectl apply -f -
-      echo "CRD applied. Sleeping 5s for initial registration..."
+      echo "Waiting for CRD to be established..."
+      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
+      echo "CRD established. Sleeping 5s for API server registration..."
       sleep 5
     EOT
     interpreter = ["/bin/bash", "-c"]
@@ -48,26 +50,8 @@ resource "helm_release" "argocd" {
   ]
 }
 
-resource "null_resource" "argocd_crds_ready" {
-  depends_on = [helm_release.argocd]
-
-  provisioner "local-exec" {
-    command = <<EOT
-      echo "⏳ Waiting for ArgoCD Application CRD to be established..."
-      kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
-      echo "CRD established. Waiting 10s to let API server register kind..."
-      sleep 10
-      echo "✅ ArgoCD CRD ready"
-      echo "--- ArgoCD Application CRD details ---"
-      kubectl get crd applications.argoproj.io -o yaml
-      echo "------------------------------------"
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
-}
-
 resource "kubernetes_manifest" "argocd_nginx_app" {
-  depends_on = [null_resource.argocd_crds_ready]
+  depends_on = [helm_release.argocd]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
@@ -98,7 +82,7 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
 }
 
 resource "kubernetes_manifest" "argocd_helm_nginx_app" {
-  depends_on = [null_resource.argocd_crds_ready]
+  depends_on = [helm_release.argocd]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
