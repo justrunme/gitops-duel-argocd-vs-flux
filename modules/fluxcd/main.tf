@@ -61,24 +61,31 @@ resource "null_resource" "flux_sync" {
     command = <<EOT
       set -e
 
-      # Wait for Flux controllers to become ready
+      echo " Waiting for Flux controllers to become ready..."
       kubectl wait --for=condition=Available --timeout=120s deployment/source-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/kustomize-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/helm-controller -n flux-system
 
-      # Wait for HelmRelease CRD to be available in the cluster
       echo "⏳ Waiting for HelmRelease CRD to be established..."
       kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=120s
-      echo "CRD established. Sleeping 5s for API server registration..."
-      sleep 5
 
-      # Create GitRepository source
+      echo " Verifying API availability for helm.toolkit.fluxcd.io..."
+      for i in {1..20}; do
+        if kubectl api-resources --api-group=helm.toolkit.fluxcd.io | grep -q HelmRelease; then
+          echo '✅ API is now available'
+          break
+        fi
+        echo "⏳ API not available yet, sleeping..."
+        sleep 5
+      done
+
+      echo " Creating GitRepository source"
       flux create source git local-repo \
         --url=https://github.com/justrunme/gitops-duel-argocd-vs-flux.git \
         --branch=main \
         --namespace=flux-system
 
-      # Create HelmRelease
+      echo " Creating HelmRelease"
       flux create helmrelease helm-nginx \
         --source=GitRepository/local-repo \
         --chart=./apps/flux/helm-nginx \
