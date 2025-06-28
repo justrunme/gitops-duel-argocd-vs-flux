@@ -1,15 +1,5 @@
-apiVersion: kustomize.toolkit.fluxcd.io/v1
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-metadata:
-  name: helm-nginx
-  namespace: flux-system
-spec:
-  interval: 1m0s
-  path: ./apps/flux/helm-nginx
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: local-repo
-  targetNamespace: default
-  wait: true
-  timeout: 2m
+resources:
+  - helmrelease.yaml
+  - helmrepository.yaml

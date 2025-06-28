@@ -7,8 +7,12 @@ spec:
   interval: 1m
   chart:
     spec:
-      chart: ./apps/flux/helm-nginx
+      chart: nginx
+      version: "15.1.1"
       sourceRef:
-        kind: GitRepository
-        name: local-repo
+        kind: HelmRepository
+        name: bitnami
         namespace: flux-system
+  values:
+    service:
+      type: ClusterIP
