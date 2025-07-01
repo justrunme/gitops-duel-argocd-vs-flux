@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-frontend
+  namespace: default # Или другое пространство имен
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-frontend
+  template:
+    metadata:
+      labels:
+        app: ui-frontend
+    spec:
+      containers:
+      - name: ui-frontend
+        image: your-docker-repo/ui-frontend:latest # Замените на ваш образ
+        ports:
+        - containerPort: 80

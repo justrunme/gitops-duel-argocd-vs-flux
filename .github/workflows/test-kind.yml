@@ -118,6 +118,26 @@ jobs:
       if: always()
       run: cat port-forward.log || echo "No port-forward log found"
 
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push UI Backend image
+      run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/gitops-duel-ui-backend:latest ./ui-backend
+        docker push ${{ secrets.DOCKER_USERNAME }}/gitops-duel-ui-backend:latest
+
+    - name: Build and push UI Frontend image
+      run: |
+        docker build -t justrunme/gitops-duel-ui-frontend:latest ./ui-frontend
+        docker push justrunme/gitops-duel-ui-frontend:latest
+
+    - name: Deploy UI to Kubernetes
+      run: |
+        kubectl apply -f kubernetes/ui/
+
     - name: Get argocd-server service YAML
       if: always()
       run: kubectl get svc argocd-server -n argocd -o yaml
