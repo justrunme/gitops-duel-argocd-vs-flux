@@ -79,6 +79,12 @@ jobs:
         kubectl get deployment helm-nginx -n default
         kubectl wait --for=condition=available deployment/helm-nginx -n default --timeout=300s
 
+    - name: Verify Nginx Application (ArgoCD Kustomize) is reachable
+      run: |
+        kubectl port-forward service/nginx 8080:80 -n default &
+        sleep 10 # Give port-forward some time to establish
+        curl -v http://localhost:8080
+
     - name: Verify FluxCD Helm App
       run: |
         flux get kustomizations -A
@@ -90,6 +96,12 @@ jobs:
         kubectl get deployment nginx -n flux-system
         kubectl get service nginx -n flux-system
         kubectl wait --for=condition=available deployment/nginx -n flux-system --timeout=300s
+
+    - name: Verify Nginx Application (FluxCD Kustomize) is reachable
+      run: |
+        kubectl port-forward service/nginx 8081:80 -n flux-system &
+        sleep 10 # Give port-forward some time to establish
+        curl -v http://localhost:8081
 
     - name: Verify All Pods
       run: |
