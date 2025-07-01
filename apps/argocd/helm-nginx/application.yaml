@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-helm-app
+  namespace: argocd
+spec:
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://github.com/justrunme/gitops-duel-argocd-vs-flux.git
+    targetRevision: HEAD
+    path: charts/nginx
+    helm:
+      values: |
+        replicaCount: 2
+        image:
+          repository: nginx
+          tag: "1.25.2"
+          pullPolicy: IfNotPresent
+        service:
+          type: ClusterIP
+          port: 80
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
