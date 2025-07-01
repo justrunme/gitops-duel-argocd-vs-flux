@@ -40,14 +40,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.x
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Terraform Apply - Core Components (ArgoCD & Flux)
         run: |
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
@@ -114,23 +106,23 @@ jobs:
 
       - name: Simulate ArgoCD Deployment Deletion
         run: |
-          kubectl delete deployment nginx-argocd -n default
-          kubectl wait --for=condition=available deployment/nginx-argocd -n default --timeout=300s
+          kubectl delete deployment nginx-helm-app -n default
+          kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
 
       - name: Simulate Flux Deployment Deletion
         run: |
-          kubectl delete deployment nginx-flux -n default
-          kubectl wait --for=condition=available deployment/nginx-flux -n default --timeout=300s
+          kubectl delete deployment nginx-helm-app -n default
+          kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
 
       - name: Simulate ArgoCD Replicas Scale
         run: |
-          kubectl scale deployment nginx-argocd --replicas=0 -n default
-          kubectl wait --for=condition=available deployment/nginx-argocd -n default --timeout=300s
+          kubectl scale deployment nginx-helm-app --replicas=0 -n default
+          kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
 
       - name: Simulate Flux Replicas Scale
         run: |
-          kubectl scale deployment nginx-flux --replicas=0 -n default
-          kubectl wait --for=condition=available deployment/nginx-flux -n default --timeout=300s
+          kubectl scale deployment nginx-helm-app --replicas=0 -n default
+          kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
 
   output-access-info:
     runs-on: ubuntu-latest
@@ -149,8 +141,8 @@ jobs:
         run: |
           GRAFANA_PASSWORD=$(kubectl --namespace monitoring get secrets monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d)
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-          echo "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" >> "$GITHUB_OUTPUT"
-          echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> "$GITHUB_OUTPUT"
+          echo "GRAFANA_PASSWORD=${GRAFANA_PASSWORD}" >> "$GITHUB_OUTPUT"
+          echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"
 
       - name: Output Access Information
         run: |
