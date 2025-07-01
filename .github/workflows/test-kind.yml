@@ -1,0 +1,288 @@
+name: GitOps Duel CI
+
+on: [push]
+
+jobs:
+  setup-kind:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.x
+
+    - name: Install Flux CLI
+      run: |
+        curl -s https://fluxcd.io/install.sh | sudo bash
+        flux --version
+
+    - name: Install ArgoCD CLI
+      run: |
+        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+        chmod +x argocd
+        sudo mv argocd /usr/local/bin/
+
+    - name: Terraform Init
+      run: terraform init
+
+  deploy-core-components:
+    runs-on: ubuntu-latest
+    needs: setup-kind
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.x
+
+    - name: Terraform Apply - Core Components (ArgoCD & Flux)
+      run: |
+        time terraform apply -target=module.argocd.helm_release.argocd -auto-approve
+        time terraform apply -target=module.argocd.null_resource.argocd_crds_ready -auto-approve
+        time terraform apply -target=module.fluxcd.helm_release.flux -auto-approve
+        time terraform apply -target=module.fluxcd.null_resource.flux_crds_ready -auto-approve
+        time terraform apply -target=module.fluxcd.null_resource.flux_sync -auto-approve
+
+    - name: Wait for ArgoCD server to be available
+      run: |
+        kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
+
+    - name: Run ArgoCD login in-cluster
+      run: |
+        kubectl apply -f .github/argocd-login-job.yaml
+        kubectl wait --for=condition=complete --timeout=120s job/argocd-login-test -n argocd
+        kubectl logs job/argocd-login-test -n argocd
+
+    - name: Debug ArgoCD login Job logs
+      if: always()
+      run: |
+        kubectl describe job argocd-login-test -n argocd || true
+        kubectl get pods -n argocd -l job-name=argocd-login-test
+        kubectl logs -n argocd -l job-name=argocd-login-test --tail=100 || true
+
+    - name: Verify ArgoCD Installation
+      run: |
+        kubectl get all -n argocd
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+
+    - name: Verify FluxCD Installation
+      run: |
+        flux get all -A
+        kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=kustomize-controller -n flux-system --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=helm-controller -n flux-system --timeout=300s
+
+  deploy-nginx-apps:
+    runs-on: ubuntu-latest
+    needs: deploy-core-components
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.x
+
+    - name: Install Flux CLI
+      run: |
+        curl -s https://fluxcd.io/install.sh | sudo bash
+        flux --version
+
+    - name: Terraform Apply - Nginx Applications
+      run: time terraform apply -auto-approve
+
+  build-and-deploy-ui:
+    runs-on: ubuntu-latest
+    needs: deploy-nginx-apps
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push UI Backend image
+      run: |
+        docker build -t justrunme/gitops-duel-ui-backend:latest ./ui-backend
+        docker push justrunme/gitops-duel-ui-backend:latest
+
+    - name: Build and push UI Frontend image
+      run: |
+        docker build -t justrunme/gitops-duel-ui-frontend:latest ./ui-frontend
+        docker push justrunme/gitops-duel-ui-frontend:latest
+
+    - name: Deploy UI to Kubernetes
+      run: |
+        kubectl apply -f kubernetes/ui/
+
+  verify-deployments:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy-ui
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Verify Nginx Application (ArgoCD Helm)
+      run: |
+        kubectl get deployment nginx-helm-app -n default
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+
+    - name: Verify Nginx Application (FluxCD Helm)
+      run: |
+        kubectl get deployment nginx-helm-app -n default
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+
+    - name: Verify UI Backend Deployment
+      run: |
+        kubectl get deployment ui-backend -n default
+        kubectl wait --for=condition=available deployment/ui-backend -n default --timeout=300s
+
+    - name: Verify UI Frontend Deployment
+      run: |
+        kubectl get deployment ui-frontend -n default
+        kubectl wait --for=condition=available deployment/ui-frontend -n default --timeout=300s
+
+    - name: Verify Nginx Application (ArgoCD Helm) is reachable
+      run: |
+        kubectl port-forward service/nginx-helm-app 8080:80 -n default &
+        sleep 10 # Give port-forward some time to establish
+        curl -v http://localhost:8080
+
+    - name: Verify Nginx Application (FluxCD Helm) is reachable
+      run: |
+        kubectl port-forward service/nginx-helm-app 8081:80 -n default &
+        sleep 10 # Give port-forward some time to establish
+        curl -v http://localhost:8081
+
+    - name: Verify UI Frontend is reachable
+      run: |
+        kubectl port-forward service/ui-frontend 8082:80 -n default &
+        sleep 10 # Give port-forward some time to establish
+        curl -v http://localhost:8082
+
+  simulate-errors:
+    runs-on: ubuntu-latest
+    needs: verify-deployments
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Install Flux CLI
+      run: |
+        curl -s https://fluxcd.io/install.sh | sudo bash
+        flux --version
+
+    - name: Install ArgoCD CLI
+      run: |
+        curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+        chmod +x argocd
+        sudo mv argocd /usr/local/bin/
+
+    - name: Simulate Error: Delete ArgoCD Nginx Deployment
+      run: |
+        echo "--- Simulating error: Deleting ArgoCD Nginx Deployment ---"
+        kubectl delete deployment nginx-helm-app -n default
+        echo "Waiting for ArgoCD to self-heal..."
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+        echo "✅ ArgoCD Nginx Deployment self-healed."
+
+    - name: Simulate Error: Delete Flux Nginx Deployment
+      run: |
+        echo "--- Simulating error: Deleting Flux Nginx Deployment ---"
+        kubectl delete deployment nginx-helm-app -n default
+        echo "Waiting for Flux to self-heal..."
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+        echo "✅ Flux Nginx Deployment self-healed."
+
+    - name: Simulate Error: Change ArgoCD Nginx Replicas
+      run: |
+        echo "--- Simulating error: Changing ArgoCD Nginx Replicas ---"
+        kubectl scale deployment nginx-helm-app --replicas=0 -n default
+        echo "Waiting for ArgoCD to self-heal..."
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+        echo "✅ ArgoCD Nginx Replicas self-healed."
+
+    - name: Simulate Error: Change Flux Nginx Replicas
+      run: |
+        echo "--- Simulating error: Changing Flux Nginx Replicas ---"
+        kubectl scale deployment nginx-helm-app --replicas=0 -n default
+        echo "Waiting for Flux to self-heal..."
+        kubectl wait --for=condition=available deployment/nginx-helm-app -n default --timeout=300s
+        echo "✅ Flux Nginx Replicas self-healed."
+
+  output-access-info:
+    runs-on: ubuntu-latest
+    needs: simulate-errors
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup KinD
+      uses: helm/kind-action@v1.10.0
+      with:
+        cluster_name: kind
+
+    - name: Get Grafana Password
+      id: grafana_password
+      run: |
+        GRAFANA_PASSWORD=$(kubectl --namespace monitoring get secrets monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d)
+        echo "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
+
+    - name: Output Access Information
+      run: |
+        echo "========================================"
+        echo "           Access Information           "
+        echo "========================================"
+        echo ""
+        echo "To access Grafana Dashboard:"
+        echo "1. Run 'kubectl --namespace monitoring port-forward svc/monitoring-grafana 3000:80' in your local terminal."
+        echo "2. Open http://localhost:3000 in your browser."
+        echo "3. Login with username: admin, password: ${{ steps.grafana_password.outputs.GRAFANA_PASSWORD }}"
+        echo ""
+        echo "To access UI Dashboard:"
+        echo "1. Run 'kubectl port-forward service/ui-frontend 8082:80 -n default' in your local terminal."
+        echo "2. Open http://localhost:8082 in your browser."
+        echo ""
+        echo "To access ArgoCD UI:"
+        echo "1. Run 'kubectl port-forward svc/argocd-server -n argocd 8080:80' in your local terminal."
+        echo "2. Open http://localhost:8080 in your browser."
+        echo "3. Get initial password: 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d; echo'"
+        echo ""
+        echo "========================================"
