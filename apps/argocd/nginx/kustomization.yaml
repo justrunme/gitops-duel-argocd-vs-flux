@@ -3,3 +3,8 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+patches:
+  - path: patches/add-last-applied-by-label.yaml
+    target:
+      kind: Deployment
+      name: nginx

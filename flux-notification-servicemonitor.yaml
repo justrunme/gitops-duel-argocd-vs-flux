@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fluxcd-notification-controller
+  namespace: monitoring
+  labels:
+    release: monitoring # Это важно для kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-controller
+  endpoints:
+  - port: http-metrics
+    interval: 30s
