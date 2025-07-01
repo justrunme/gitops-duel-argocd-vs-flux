@@ -3,6 +3,7 @@ name: GitOps Duel CI
 on:
   push:
     branches: [ main ]
+  pull_request:
 
 jobs:
   setup-kind:
@@ -40,6 +41,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.x
+
       - name: Terraform Apply - Core Components (ArgoCD & Flux)
         run: |
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
@@ -67,6 +78,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.x
 
       - name: Terraform Apply - Nginx Applications
         run: terraform apply -auto-approve
@@ -103,6 +124,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.x
 
       - name: Simulate ArgoCD Deployment Deletion
         run: |
