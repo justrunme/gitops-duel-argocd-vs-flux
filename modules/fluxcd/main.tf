@@ -108,19 +108,18 @@ resource "null_resource" "flux_sync" {
       echo "⏳ Reconciling GitRepository..."
       flux reconcile source git local-repo -n flux-system --with-source-digests
 
-      echo " Applying Kustomization for HelmRelease..."
-      flux create kustomization helm-nginx \
+      echo " Creating HelmRelease for Nginx..."
+      flux create helmrelease nginx-helm-app \
         --source=GitRepository/local-repo \
-        --path=./apps/flux/helm-nginx \
-        --prune=true \
+        --chart=./charts/nginx \
         --interval=1m \
-        --namespace=flux-system
+        --namespace=default \
+        --export > nginx-helm-app.yaml
 
-      echo "⏳ Reconciling Kustomization..."
-      flux reconcile kustomization helm-nginx -n flux-system --with-source-digests
+      kubectl apply -f nginx-helm-app.yaml
 
-      echo "⏳ Waiting for HelmRelease to reconcile..."
-      flux reconcile helmrelease helm-nginx -n flux-system --with-source-digests
+      echo "⏳ Reconciling HelmRelease..."
+      flux reconcile helmrelease nginx-helm-app -n default --with-source-digests
 
     EOT
     interpreter = ["/bin/bash", "-c"]

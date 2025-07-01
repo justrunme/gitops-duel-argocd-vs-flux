@@ -98,7 +98,19 @@ resource "kubernetes_manifest" "argocd_helm_nginx_app" {
       source = {
         repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
         targetRevision = "HEAD"
-        path           = "apps/argocd/helm-nginx"
+        path           = "charts/nginx"
+        helm = {
+          values = <<-EOT
+            replicaCount: 2
+            image:
+              repository: nginx
+              tag: "1.25.2"
+              pullPolicy: IfNotPresent
+            service:
+              type: ClusterIP
+              port: 80
+          EOT
+        }
       }
       destination = {
         server    = "https://kubernetes.default.svc"
