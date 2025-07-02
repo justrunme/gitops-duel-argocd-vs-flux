@@ -94,7 +94,7 @@ resource "null_resource" "flux_sync" {
       done
 
       echo "⏳ Verifying HelmRelease kind is fully recognized by kubectl explain..."
-      for i in {1..10}; do
+      for i in {1..20}; do
         if kubectl explain helmrelease --api-version=helm.toolkit.fluxcd.io/v2 >/dev/null 2>&1; then
           echo "✅ HelmRelease kind is fully recognized"
           break
