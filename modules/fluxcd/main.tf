@@ -110,7 +110,7 @@ resource "null_resource" "flux_sync" {
         --namespace=flux-system
 
       echo "⏳ Reconciling GitRepository..."
-      flux reconcile source git local-repo -n flux-system --with-source-digests
+      flux reconcile source git local-repo -n flux-system
 
       echo " Creating HelmRelease for Nginx..."
       flux create helmrelease nginx-helm-app \
@@ -123,7 +123,7 @@ resource "null_resource" "flux_sync" {
       kubectl apply -f nginx-helm-app.yaml
 
       echo "⏳ Reconciling HelmRelease..."
-      flux reconcile helmrelease nginx-helm-app -n default --with-source-digests
+      flux reconcile helmrelease nginx-helm-app -n default
 
     EOT
     interpreter = ["/bin/bash", "-c"]
