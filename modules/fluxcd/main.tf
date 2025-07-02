@@ -120,6 +120,9 @@ resource "null_resource" "flux_sync" {
         --namespace=default \
         --export > nginx-helm-app.yaml
 
+      echo " Waiting extra time to ensure HelmRelease kind is fully registered..."
+      sleep 30
+
       kubectl apply -f nginx-helm-app.yaml
 
       echo "⏳ Reconciling HelmRelease..."
