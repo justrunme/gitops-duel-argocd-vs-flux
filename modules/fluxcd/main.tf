@@ -24,20 +24,58 @@ resource "helm_release" "flux" {
   repository       = "https://fluxcd-community.github.io/helm-charts"
   chart            = "flux2"
   version          = "2.11.1"
-  create_namespace = false
-  depends_on = [
-    kubernetes_namespace.flux
-  ]
-
+  depends_on       = [kubernetes_namespace.flux]
   set = [
     {
       name  = "installCRDs"
-      value = "true"
-    },
-    {
-      name  = "helmController.enabled"
       value = "true"
     }
   ]
 }
 
+resource "null_resource" "flux_crds_ready" {
+  depends_on = [helm_release.flux]
+  provisioner "local-exec" {
+    command = "kubectl wait --for=condition=Established crd/kustomizations.kustomize.toolkit.fluxcd.io --timeout=120s"
+  }
+}
+
+resource "kubernetes_manifest" "flux_git_repository" {
+  depends_on = [null_resource.flux_crds_ready]
+  manifest = {
+    apiVersion = "source.toolkit.fluxcd.io/v1"
+    kind       = "GitRepository"
+    metadata = {
+      name      = "local-repo"
+      namespace = "flux-system"
+    }
+    spec = {
+      interval = "1m"
+      url      = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+      ref = {
+        branch = "main"
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "flux_kustomization" {
+  depends_on = [kubernetes_manifest.flux_git_repository]
+  manifest = {
+    apiVersion = "kustomize.toolkit.fluxcd.io/v1"
+    kind       = "Kustomization"
+    metadata = {
+      name      = "flux-nginx-app"
+      namespace = "flux-system"
+    }
+    spec = {
+      interval = "1m"
+      path     = "./apps/flux/nginx"
+      prune    = true
+      sourceRef = {
+        kind = "GitRepository"
+        name = "local-repo"
+      }
+    }
+  }
+}
