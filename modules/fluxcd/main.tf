@@ -139,8 +139,9 @@ EOF
 
       kubectl apply --server-side -f nginx-helm-app.yaml
 
-      echo "⏳ Waiting for rollout..."
-      kubectl rollout status deployment nginx-helm-app -n default --timeout=120s
+      echo "⏳ Waiting for HelmRelease to be Ready..."
+      kubectl wait helmrelease nginx-helm-app -n default \
+        --for=condition=Ready --timeout=180s
 
     EOT
     interpreter = ["/bin/bash", "-c"]
