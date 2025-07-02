@@ -52,6 +52,10 @@ jobs:
         with:
           terraform_version: 1.x
 
+      - name: Terraform Init
+        working-directory: .
+        run: terraform init
+
       - name: Terraform Apply - Core Components (ArgoCD & Flux)
         working-directory: .
         run: |
@@ -90,6 +94,10 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.x
+
+      - name: Terraform Init
+        working-directory: .
+        run: terraform init
 
       - name: Terraform Apply - Nginx Applications
         working-directory: .
@@ -137,6 +145,10 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.x
+
+      - name: Terraform Init
+        working-directory: .
+        run: terraform init
 
       - name: Simulate ArgoCD Deployment Deletion
         run: |
@@ -211,6 +223,10 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: .
+        run: terraform init
 
       - name: Destroy Infrastructure
         working-directory: .
