@@ -61,6 +61,10 @@ resource "null_resource" "flux_sync" {
     command = <<EOT
       set -e
 
+      echo "Installing Flux CLI..."
+      curl -s https://fluxcd.io/install.sh | sudo bash
+      export PATH=$PATH:/usr/local/bin
+
       echo " Waiting for Flux controllers to become ready..."
       kubectl wait --for=condition=Available --timeout=120s deployment/source-controller -n flux-system
       kubectl wait --for=condition=Available --timeout=120s deployment/kustomize-controller -n flux-system
