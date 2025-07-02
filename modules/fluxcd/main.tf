@@ -113,12 +113,23 @@ resource "null_resource" "flux_sync" {
       flux reconcile source git local-repo -n flux-system
 
       echo " Creating HelmRelease for Nginx..."
-      flux create helmrelease nginx-helm-app \
-        --source=GitRepository/local-repo \
-        --chart=./charts/nginx \
-        --interval=1m \
-        --namespace=default \
-        --export > nginx-helm-app.yaml
+      cat <<EOF > nginx-helm-app.yaml
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: nginx-helm-app
+  namespace: default
+spec:
+  interval: 1m
+  chart:
+    spec:
+      chart: ./charts/nginx
+      sourceRef:
+        kind: GitRepository
+        name: local-repo
+        namespace: flux-system
+  values: {}
+EOF
 
       echo " Waiting extra time to ensure HelmRelease kind is fully registered..."
       sleep 30
