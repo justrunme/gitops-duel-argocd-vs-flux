@@ -43,12 +43,13 @@ resource "null_resource" "argocd_crds_ready" {
       echo "⌛ Waiting for ArgoCD Application CRD..."
       for i in {1..30}; do
         kubectl get crd applications.argoproj.io > /dev/null 2>&1 && exit 0
-        echo "Still waiting... ($i)"
+        echo "⏳ Still waiting for CRD... ($i)"
         sleep 5
       done
-      echo "❌ Timeout waiting for CRD applications.argoproj.io"
+      echo "❌ Timeout waiting for applications.argoproj.io"
       exit 1
     EOT
+    interpreter = ["/bin/bash", "-c"]
   }
 }
 
