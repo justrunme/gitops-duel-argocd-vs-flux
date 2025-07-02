@@ -6,7 +6,18 @@ terraform {
     helm = {
       source = "hashicorp/helm"
     }
+    kubectl = {
+      source = "gavinbunney/kubectl"
+    }
   }
+}
+
+locals {
+  crd_names = [
+    "helmreleases.helm.toolkit.fluxcd.io",
+    "kustomizations.kustomize.toolkit.fluxcd.io",
+    "gitrepositories.source.toolkit.fluxcd.io",
+  ]
 }
 
 resource "kubernetes_namespace" "flux" {
@@ -35,26 +46,22 @@ resource "helm_release" "flux" {
   ]
 }
 
-resource "null_resource" "flux_crds_ready" {
+data "kubectl_manifest" "flux_crds" {
   depends_on = [helm_release.flux]
-
-  provisioner "local-exec" {
-    command = <<EOT
-      echo "⏳ Waiting for FluxCD HelmRelease CRD to be established..."
-      kubectl wait --for=condition=Established crd/helmreleases.helm.toolkit.fluxcd.io --timeout=90s
-      echo "✅ FluxCD HelmRelease CRD ready"
-      echo "--- FluxCD HelmRelease CRD details ---"
-      kubectl get crd helmreleases.helm.toolkit.fluxcd.io -o yaml
-      echo "------------------------------------"
-    EOT
-    interpreter = ["/bin/bash", "-c"]
-  }
+  count      = length(local.crd_names)
+  yaml_body = yamlencode({
+    apiVersion = "apiextensions.k8s.io/v1"
+    kind       = "CustomResourceDefinition"
+    metadata = {
+      name = local.crd_names[count.index]
+    }
+  })
 }
 
 resource "null_resource" "flux_sync" {
   depends_on = [
     helm_release.flux,
-    null_resource.flux_crds_ready
+    data.kubectl_manifest.flux_crds
   ]
 
   provisioner "local-exec" {
