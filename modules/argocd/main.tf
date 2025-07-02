@@ -6,7 +6,17 @@ terraform {
     helm = {
       source = "hashicorp/helm"
     }
+    kubectl = {
+      source = "gavinbunney/kubectl"
+    }
   }
+}
+
+locals {
+  crd_names = [
+    "applications.argoproj.io",
+    "appprojects.argoproj.io",
+  ]
 }
 
 resource "kubernetes_namespace" "argocd" {
@@ -35,26 +45,25 @@ resource "helm_release" "argocd" {
   ]
 }
 
-resource "null_resource" "argocd_crds_ready" {
+data "kubectl_manifest" "argocd_crd" {
   depends_on = [helm_release.argocd]
-
-  provisioner "local-exec" {
-    command = <<EOT
-      echo "⌛ Waiting for ArgoCD Application CRD..."
-      for i in {1..30}; do
-        kubectl get crd applications.argoproj.io > /dev/null 2>&1 && exit 0
-        echo "⏳ Still waiting for CRD... ($i)"
-        sleep 5
-      done
-      echo "❌ Timeout waiting for applications.argoproj.io"
-      exit 1
-    EOT
-    interpreter = ["/bin/bash", "-c"]
+  count      = length(local.crd_names)
+  yaml_body = yamlencode({
+    apiVersion = "apiextensions.k8s.io/v1"
+    kind       = "CustomResourceDefinition"
+    metadata = {
+      name = local.crd_names[count.index]
+    }
+  })
+  wait_for = {
+    "fields" = {
+      "status.acceptedNames.kind" = "Application"
+    }
   }
 }
 
 resource "kubernetes_manifest" "argocd_nginx_app" {
-  depends_on = [null_resource.argocd_crds_ready]
+  depends_on = [data.kubectl_manifest.argocd_crd]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
@@ -85,7 +94,7 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
 }
 
 resource "kubernetes_manifest" "argocd_helm_nginx_app" {
-  depends_on = [null_resource.argocd_crds_ready]
+  depends_on = [data.kubectl_manifest.argocd_crd]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
