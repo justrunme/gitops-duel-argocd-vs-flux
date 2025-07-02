@@ -123,7 +123,10 @@ resource "null_resource" "flux_sync" {
       echo " Waiting extra time to ensure HelmRelease kind is fully registered..."
       sleep 30
 
-      flux apply -f nginx-helm-app.yaml
+      echo " Clearing kubectl discovery cache..."
+      kubectl api-resources --cached=false > /dev/null
+
+      kubectl apply --server-side -f nginx-helm-app.yaml
 
       echo "⏳ Reconciling HelmRelease..."
       flux reconcile helmrelease nginx-helm-app -n default
