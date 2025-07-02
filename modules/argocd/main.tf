@@ -6,17 +6,10 @@ terraform {
     helm = {
       source = "hashicorp/helm"
     }
-    kubectl = {
-      source = "gavinbunney/kubectl"
+    null = {
+      source = "hashicorp/null"
     }
   }
-}
-
-locals {
-  crd_names = [
-    "applications.argoproj.io",
-    "appprojects.argoproj.io",
-  ]
 }
 
 resource "kubernetes_namespace" "argocd" {
@@ -27,15 +20,21 @@ resource "kubernetes_namespace" "argocd" {
 
 resource "helm_release" "argocd" {
   name       = "argocd"
-  namespace  = "argocd"
+  namespace  = kubernetes_namespace.argocd.metadata[0].name
   chart      = "argo-cd"
   repository = "https://argoproj.github.io/argo-helm"
   version    = "5.51.6"
 
-  create_namespace = true
+  create_namespace = false
+  depends_on = [
+    kubernetes_namespace.argocd
+  ]
 
   values = [
     yamlencode({
+      crds = {
+        install = true
+      }
       server = {
         service = {
           type = "ClusterIP"
@@ -45,25 +44,10 @@ resource "helm_release" "argocd" {
   ]
 }
 
-data "kubectl_manifest" "argocd_crd" {
-  depends_on = [helm_release.argocd]
-  count      = length(local.crd_names)
-  yaml_body = yamlencode({
-    apiVersion = "apiextensions.k8s.io/v1"
-    kind       = "CustomResourceDefinition"
-    metadata = {
-      name = local.crd_names[count.index]
-    }
-  })
-  wait_for = {
-    "fields" = {
-      "status.acceptedNames.kind" = "Application"
-    }
-  }
-}
+
 
 resource "kubernetes_manifest" "argocd_nginx_app" {
-  depends_on = [data.kubectl_manifest.argocd_crd]
+  depends_on = [null_resource.argocd_crds_ready]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
@@ -94,7 +78,7 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
 }
 
 resource "kubernetes_manifest" "argocd_helm_nginx_app" {
-  depends_on = [data.kubectl_manifest.argocd_crd]
+  depends_on = [null_resource.argocd_crds_ready]
 
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"

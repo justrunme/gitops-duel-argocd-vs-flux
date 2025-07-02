@@ -5,5 +5,3 @@ module "argocd" {
 module "fluxcd" {
   source = "./modules/fluxcd"
 }
-
-
