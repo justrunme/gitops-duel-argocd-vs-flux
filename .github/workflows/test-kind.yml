@@ -32,6 +32,7 @@ jobs:
           sudo mv argocd /usr/local/bin/
 
       - name: Terraform Init
+        working-directory: .
         run: terraform init
 
   deploy-core-components:
@@ -52,6 +53,7 @@ jobs:
           terraform_version: 1.x
 
       - name: Terraform Apply - Core Components (ArgoCD & Flux)
+        working-directory: .
         run: |
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
           terraform apply -target=module.argocd.null_resource.argocd_crds_ready -auto-approve
@@ -90,6 +92,7 @@ jobs:
           terraform_version: 1.x
 
       - name: Terraform Apply - Nginx Applications
+        working-directory: .
         run: terraform apply -auto-approve
 
   build-and-deploy-ui:
@@ -210,4 +213,5 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Destroy Infrastructure
+        working-directory: .
         run: terraform destroy -auto-approve
