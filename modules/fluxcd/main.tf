@@ -123,7 +123,7 @@ resource "null_resource" "flux_sync" {
       echo " Waiting extra time to ensure HelmRelease kind is fully registered..."
       sleep 30
 
-      kubectl apply -f nginx-helm-app.yaml
+      flux apply -f nginx-helm-app.yaml
 
       echo "⏳ Reconciling HelmRelease..."
       flux reconcile helmrelease nginx-helm-app -n default
