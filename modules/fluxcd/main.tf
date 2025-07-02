@@ -139,8 +139,8 @@ EOF
 
       kubectl apply --server-side -f nginx-helm-app.yaml
 
-      echo "⏳ Reconciling HelmRelease..."
-      flux reconcile helmrelease nginx-helm-app -n default
+      echo "⏳ Waiting for rollout..."
+      kubectl rollout status deployment nginx-helm-app -n default --timeout=120s
 
     EOT
     interpreter = ["/bin/bash", "-c"]
