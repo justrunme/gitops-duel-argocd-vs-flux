@@ -85,6 +85,7 @@ resource "kubernetes_manifest" "argocd_helm_nginx_app" {
         path           = "apps/argocd/helm-nginx/nginx"
         helm = {
           values = <<-EOT
+            name: helm-nginx-app
             replicaCount: 2
           EOT
         }
