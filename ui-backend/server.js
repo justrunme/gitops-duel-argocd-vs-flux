@@ -5,6 +5,19 @@ const path = require('path');
 const app = express();
 const port = 3001; // Порт для бэкенда
 
+// CORS middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -18,7 +31,11 @@ app.get('/api/kubectl-version', (req, res) => {
       console.error(`exec error: ${error}`);
       return res.status(500).json({ error: stderr });
     }
-    res.json(JSON.parse(stdout));
+    try {
+      res.json(JSON.parse(stdout));
+    } catch (parseError) {
+      res.status(500).json({ error: 'Failed to parse kubectl output' });
+    }
   });
 });
 
@@ -29,7 +46,11 @@ app.get('/api/argocd/applications', (req, res) => {
       console.error(`exec error: ${error}`);
       return res.status(500).json({ error: stderr });
     }
-    res.json(JSON.parse(stdout));
+    try {
+      res.json(JSON.parse(stdout));
+    } catch (parseError) {
+      res.status(500).json({ error: 'Failed to parse ArgoCD output' });
+    }
   });
 });
 
@@ -40,7 +61,11 @@ app.get('/api/flux/kustomizations', (req, res) => {
       console.error(`exec error: ${error}`);
       return res.status(500).json({ error: stderr });
     }
-    res.json(JSON.parse(stdout));
+    try {
+      res.json(JSON.parse(stdout));
+    } catch (parseError) {
+      res.status(500).json({ error: 'Failed to parse Flux output' });
+    }
   });
 });
 
