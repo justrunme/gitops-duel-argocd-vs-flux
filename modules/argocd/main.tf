@@ -12,9 +12,34 @@ terraform {
   }
 }
 
+variable "argocd_version" {
+  description = "Version of ArgoCD Helm chart"
+  type        = string
+}
+
+variable "git_repository_url" {
+  description = "Git repository URL for GitOps applications"
+  type        = string
+}
+
+variable "git_branch" {
+  description = "Git branch to track"
+  type        = string
+}
+
+variable "argocd_namespace" {
+  description = "Namespace for ArgoCD"
+  type        = string
+}
+
+variable "target_namespace" {
+  description = "Target namespace for applications"
+  type        = string
+}
+
 resource "kubernetes_namespace" "argocd" {
   metadata {
-    name = "argocd"
+    name = var.argocd_namespace
   }
 }
 
@@ -23,7 +48,7 @@ resource "helm_release" "argocd" {
   namespace  = kubernetes_namespace.argocd.metadata[0].name
   chart      = "argo-cd"
   repository = "https://argoproj.github.io/argo-helm"
-  version    = "5.51.6"
+  version    = var.argocd_version
   depends_on = [kubernetes_namespace.argocd]
 
   values = [
@@ -50,18 +75,18 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
     kind       = "Application"
     metadata = {
       name      = "nginx-app"
-      namespace = "argocd"
+      namespace = var.argocd_namespace
     }
     spec = {
       project = "default"
       source = {
-        repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+        repoURL        = var.git_repository_url
         targetRevision = "HEAD"
         path           = "apps/argocd/nginx"
       }
       destination = {
         server    = "https://kubernetes.default.svc"
-        namespace = "default"
+        namespace = var.target_namespace
       }
     }
   }
@@ -75,13 +100,13 @@ resource "kubernetes_manifest" "argocd_helm_nginx_app" {
     kind       = "Application"
     metadata = {
       name      = "helm-nginx-app"
-      namespace = "argocd"
+      namespace = var.argocd_namespace
     }
     spec = {
       project = "default"
       source = {
-        repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
-        targetRevision = "main"
+        repoURL        = var.git_repository_url
+        targetRevision = var.git_branch
         path           = "apps/argocd/helm-nginx/nginx"
         helm = {
           values = <<-EOT
@@ -92,7 +117,7 @@ resource "kubernetes_manifest" "argocd_helm_nginx_app" {
       }
       destination = {
         server    = "https://kubernetes.default.svc"
-        namespace = "default"
+        namespace = var.target_namespace
       }
     }
   }
