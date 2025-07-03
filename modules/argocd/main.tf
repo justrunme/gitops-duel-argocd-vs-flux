@@ -44,6 +44,7 @@ resource "null_resource" "argocd_crds_ready" {
 
 resource "kubernetes_manifest" "argocd_nginx_app" {
   depends_on = [null_resource.argocd_crds_ready]
+
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
@@ -65,3 +66,34 @@ resource "kubernetes_manifest" "argocd_nginx_app" {
     }
   }
 }
+
+resource "kubernetes_manifest" "argocd_helm_nginx_app" {
+  depends_on = [null_resource.argocd_crds_ready]
+
+  manifest = {
+    apiVersion = "argoproj.io/v1alpha1"
+    kind       = "Application"
+    metadata = {
+      name      = "helm-nginx-app"
+      namespace = "argocd"
+    }
+    spec = {
+      project = "default"
+      source = {
+        repoURL        = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+        targetRevision = "main"
+        path           = "apps/argocd/helm-nginx/nginx"
+        helm = {
+          values = <<-EOT
+            replicaCount: 2
+          EOT
+        }
+      }
+      destination = {
+        server    = "https://kubernetes.default.svc"
+        namespace = "default"
+      }
+    }
+  }
+}
+
