@@ -72,6 +72,7 @@ resource "kubernetes_manifest" "flux_kustomization" {
       interval = "1m"
       path     = "./apps/flux/nginx"
       prune    = true
+      targetNamespace = "default"
       sourceRef = {
         kind = "GitRepository"
         name = "local-repo"
