@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: ui-frontend
-        image: your-docker-repo/ui-frontend:latest # Замените на ваш образ
+        image: justrunme/gitops-duel-ui-frontend:latest
         ports:
         - containerPort: 80

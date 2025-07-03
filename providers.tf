@@ -28,7 +28,16 @@ provider "kubernetes" {
 }
 
 provider "helm" {
+  kubernetes {
+    config_path = "~/.kube/config"
+  }
+}
+
+provider "flux" {
   kubernetes = {
     config_path = "~/.kube/config"
+  }
+  git = {
+    url = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
   }
 }
