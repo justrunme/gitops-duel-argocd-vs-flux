@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: ui-backend
-        image: your-docker-repo/ui-backend:latest # Замените на ваш образ
+        image: justrunme/gitops-duel-ui-backend:latest
         ports:
         - containerPort: 3001
         env:

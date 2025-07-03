@@ -12,9 +12,34 @@ terraform {
   }
 }
 
+variable "flux_version" {
+  description = "Version of Flux2 Helm chart"
+  type        = string
+}
+
+variable "git_repository_url" {
+  description = "Git repository URL for GitOps applications"
+  type        = string
+}
+
+variable "git_branch" {
+  description = "Git branch to track"
+  type        = string
+}
+
+variable "flux_namespace" {
+  description = "Namespace for FluxCD"
+  type        = string
+}
+
+variable "target_namespace" {
+  description = "Target namespace for applications"
+  type        = string
+}
+
 resource "kubernetes_namespace" "flux" {
   metadata {
-    name = "flux-system"
+    name = var.flux_namespace
   }
 }
 
@@ -23,14 +48,12 @@ resource "helm_release" "flux" {
   namespace        = kubernetes_namespace.flux.metadata[0].name
   repository       = "https://fluxcd-community.github.io/helm-charts"
   chart            = "flux2"
-  version          = "2.11.1"
+  version          = var.flux_version
   depends_on       = [kubernetes_namespace.flux]
-  set = [
-    {
-      name  = "installCRDs"
-      value = "true"
-    }
-  ]
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
 }
 
 resource "null_resource" "flux_crds_ready" {
@@ -47,13 +70,13 @@ resource "kubernetes_manifest" "flux_git_repository" {
     kind       = "GitRepository"
     metadata = {
       name      = "local-repo"
-      namespace = "flux-system"
+      namespace = var.flux_namespace
     }
     spec = {
       interval = "1m"
-      url      = "https://github.com/justrunme/gitops-duel-argocd-vs-flux.git"
+      url      = var.git_repository_url
       ref = {
-        branch = "main"
+        branch = var.git_branch
       }
     }
   }
@@ -66,13 +89,13 @@ resource "kubernetes_manifest" "flux_kustomization" {
     kind       = "Kustomization"
     metadata = {
       name      = "flux-nginx-app"
-      namespace = "flux-system"
+      namespace = var.flux_namespace
     }
     spec = {
       interval = "1m"
       path     = "./apps/flux/nginx"
       prune    = true
-      targetNamespace = "default"
+      targetNamespace = var.target_namespace
       sourceRef = {
         kind = "GitRepository"
         name = "local-repo"
