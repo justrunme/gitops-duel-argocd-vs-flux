@@ -84,7 +84,7 @@ jobs:
         run: |
           echo "List all deployments in default:"
           kubectl get deployments -n default
-          echo "List all ArgoCD applications:"
+          echo "List all ArgoCD applications: Lexington"
           kubectl get applications -A
 
       - name: Simulate ArgoCD Deployment Issues
@@ -127,4 +127,4 @@ To access ArgoCD UI:
 3. Login with username: admin
    Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}
 ========================================
-EOF
+EOF 
