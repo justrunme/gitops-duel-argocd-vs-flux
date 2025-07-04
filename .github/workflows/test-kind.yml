@@ -80,20 +80,23 @@ jobs:
       - name: Deploy UI
         run: kubectl apply -f kubernetes/ui/
 
+      - name: Debug ArgoCD deployed apps
+        run: |
+          echo "List all deployments in default:"
+          kubectl get deployments -n default
+          echo "List all ArgoCD applications:"
+          kubectl get applications -A
+
       - name: Simulate ArgoCD Deployment Issues
         run: |
-          # Симуляция удаления deployment-а ArgoCD приложения
-          kubectl delete deployment nginx-app -n default --ignore-not-found=true
+          kubectl get deployment nginx-app -n default && kubectl delete deployment nginx-app -n default || echo "nginx-app not found for ArgoCD test"
           sleep 30
-          # Ожидание восстановления ArgoCD
           kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "ArgoCD recovery test completed"
 
       - name: Simulate Flux Deployment Issues  
         run: |
-          # Симуляция изменения количества реплик Flux приложения
-          kubectl scale deployment nginx-app --replicas=0 -n default --ignore-not-found=true
+          kubectl get deployment nginx-app -n default && kubectl scale deployment nginx-app --replicas=0 -n default || echo "nginx-app not found for Flux test"
           sleep 30
-          # Ожидание восстановления Flux
           kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "Flux recovery test completed"
 
       - name: Get Access Information
