@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  setup-and-deploy:
+  gitops-duel-ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -61,17 +61,6 @@ jobs:
           flux get all -A
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
 
-  build-and-deploy-ui:
-    runs-on: ubuntu-latest
-    needs: setup-and-deploy
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl config
-        run: |
-          kind export kubeconfig --name kind
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -91,17 +80,6 @@ jobs:
       - name: Deploy UI
         run: kubectl apply -f kubernetes/ui/
 
-  simulate-errors:
-    runs-on: ubuntu-latest
-    needs: build-and-deploy-ui
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl config
-        run: |
-          kind export kubeconfig --name kind
-
       - name: Simulate ArgoCD Deployment Issues
         run: |
           # Симуляция удаления deployment-а ArgoCD приложения
@@ -118,23 +96,12 @@ jobs:
           # Ожидание восстановления Flux
           kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "Flux recovery test completed"
 
-  output-access-info:
-    runs-on: ubuntu-latest
-    needs: simulate-errors
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl config
-        run: |
-          kind export kubeconfig --name kind
-
       - name: Get Access Information
         id: access_info
         run: |
           # Получение паролей с проверкой существования секретов
           if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
-            ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+            ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{"".data.password""}" | base64 -d)
             echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"
           else
             echo "ARGOCD_PASSWORD=admin" >> "$GITHUB_OUTPUT"
@@ -155,4 +122,4 @@ jobs:
           echo "2. Open http://localhost:8080"
           echo "3. Login with username: admin"
           echo "   Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}"
-          echo "========================================"
+          echo "========================================
