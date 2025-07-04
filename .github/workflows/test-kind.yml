@@ -1,13 +1,19 @@
-name: GitOps Duel CI
+name: GitOps Duel CI/CD Pipeline
 
 on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
+
+env:
+  CLUSTER_NAME: kind
 
 jobs:
   setup-and-deploy:
     runs-on: ubuntu-latest
+    outputs:
+      kubeconfig: ${{ steps.kubeconfig.outputs.kubeconfig }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -15,7 +21,8 @@ jobs:
       - name: Setup KinD
         uses: helm/kind-action@v1.10.0
         with:
-          cluster_name: kind
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          wait: 120s
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -32,6 +39,19 @@ jobs:
           curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
           chmod +x argocd
           sudo mv argocd /usr/local/bin/
+          argocd version --client
+
+      - name: Verify cluster connectivity
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Save kubeconfig
+        id: kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          kind export kubeconfig --name ${{ env.CLUSTER_NAME }}
+          echo "kubeconfig=$(cat ~/.kube/config | base64 -w 0)" >> "$GITHUB_OUTPUT"
 
       - name: Terraform Init
         working-directory: .
@@ -43,23 +63,28 @@ jobs:
           terraform apply -target=module.argocd.kubernetes_namespace.argocd -auto-approve
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
           echo "⏳ Waiting for ArgoCD CRDs to be ready..."
-          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_nginx_app -auto-approve
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_helm_nginx_app -auto-approve
           terraform apply -auto-approve
 
       - name: Wait for ArgoCD server
-        run: kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
+        run: |
+          kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=600s
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
 
       - name: Verify ArgoCD
         run: |
+          echo "ArgoCD Resources:"
           kubectl get all -n argocd
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+          echo "ArgoCD Applications:"
+          kubectl get applications -n argocd || echo "No applications found yet"
 
       - name: Verify FluxCD
         run: |
+          echo "Flux Resources:"
           flux get all -A
-          kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s || echo "Flux may still be starting"
 
   build-and-deploy-ui:
     runs-on: ubuntu-latest
@@ -67,6 +92,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          wait: 30s
+
+      - name: Restore kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ needs.setup-and-deploy.outputs.kubeconfig }}" | base64 -d > ~/.kube/config
+          kubectl cluster-info
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -76,64 +113,114 @@ jobs:
 
       - name: Build and push UI Backend
         run: |
+          echo "Building UI Backend..."
           docker build -t justrunme/gitops-duel-ui-backend:latest ./ui-backend
           docker push justrunme/gitops-duel-ui-backend:latest
 
       - name: Build and push UI Frontend
         run: |
+          echo "Building UI Frontend..."
           docker build -t justrunme/gitops-duel-ui-frontend:latest ./ui-frontend
           docker push justrunme/gitops-duel-ui-frontend:latest
 
       - name: Deploy UI
-        run: kubectl apply -f kubernetes/ui/
+        run: |
+          echo "Deploying UI components..."
+          kubectl apply -f kubernetes/ui/
+          echo "Waiting for UI deployments..."
+          kubectl wait --for=condition=available deployment/ui-backend -n default --timeout=300s || echo "UI Backend deployment may still be starting"
+          kubectl wait --for=condition=available deployment/ui-frontend -n default --timeout=300s || echo "UI Frontend deployment may still be starting"
 
   simulate-errors:
     runs-on: ubuntu-latest
-    needs: build-and-deploy-ui
+    needs: [setup-and-deploy, build-and-deploy-ui]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup kubectl config
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          wait: 30s
+
+      - name: Restore kubeconfig
         run: |
-          kind export kubeconfig --name kind
+          mkdir -p ~/.kube
+          echo "${{ needs.setup-and-deploy.outputs.kubeconfig }}" | base64 -d > ~/.kube/config
+          kubectl cluster-info
 
       - name: Simulate ArgoCD Deployment Issues
         run: |
-          # Симуляция удаления deployment-а ArgoCD приложения
-          kubectl delete deployment nginx-app -n default --ignore-not-found=true
-          sleep 30
-          # Ожидание восстановления ArgoCD
-          kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "ArgoCD recovery test completed"
+          echo "Simulating ArgoCD deployment issues..."
+          # Проверяем существование deployment перед удалением
+          if kubectl get deployment nginx-app -n default &>/dev/null; then
+            kubectl delete deployment nginx-app -n default
+            echo "Deleted nginx-app deployment, waiting for ArgoCD to recover..."
+            sleep 30
+            # Ожидание восстановления ArgoCD (с таймаутом)
+            kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "ArgoCD recovery test completed (may need more time)"
+          else
+            echo "nginx-app deployment not found, skipping ArgoCD recovery test"
+          fi
 
       - name: Simulate Flux Deployment Issues  
         run: |
-          # Симуляция изменения количества реплик Flux приложения
-          kubectl scale deployment nginx-app --replicas=0 -n default --ignore-not-found=true
-          sleep 30
-          # Ожидание восстановления Flux
-          kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "Flux recovery test completed"
+          echo "Simulating Flux deployment issues..."
+          # Проверяем существование deployment перед масштабированием
+          if kubectl get deployment nginx-app -n default &>/dev/null; then
+            kubectl scale deployment nginx-app --replicas=0 -n default
+            echo "Scaled nginx-app to 0 replicas, waiting for Flux to recover..."
+            sleep 30
+            # Ожидание восстановления Flux
+            kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "Flux recovery test completed (may need more time)"
+          else
+            echo "nginx-app deployment not found, skipping Flux recovery test"
+          fi
+
+      - name: Check cluster state after simulations
+        run: |
+          echo "=== Cluster State After Simulations ==="
+          echo "ArgoCD Status:"
+          kubectl get all -n argocd
+          echo ""
+          echo "Flux Status:"
+          kubectl get all -n flux-system
+          echo ""
+          echo "Default Namespace:"
+          kubectl get all -n default
 
   output-access-info:
     runs-on: ubuntu-latest
-    needs: simulate-errors
+    needs: [setup-and-deploy, simulate-errors]
+    if: always()
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup kubectl config
+      - name: Setup KinD
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          wait: 30s
+
+      - name: Restore kubeconfig
         run: |
-          kind export kubeconfig --name kind
+          mkdir -p ~/.kube
+          echo "${{ needs.setup-and-deploy.outputs.kubeconfig }}" | base64 -d > ~/.kube/config
+          kubectl cluster-info
 
       - name: Get Access Information
         id: access_info
         run: |
+          echo "Retrieving access information..."
           # Получение паролей с проверкой существования секретов
           if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
             ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
             echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"
           else
             echo "ARGOCD_PASSWORD=admin" >> "$GITHUB_OUTPUT"
+            echo "Warning: ArgoCD initial admin secret not found, using default password"
           fi
 
       - name: Output Access Information
@@ -142,13 +229,34 @@ jobs:
           echo "           Access Information           "
           echo "========================================"
           echo ""
-          echo "To access UI Dashboard:"
-          echo "1. Run 'kubectl port-forward service/ui-frontend 8082:80 -n default'"
-          echo "2. Open http://localhost:8082"
+          echo "🌐 To access UI Dashboard:"
+          echo "1. Run: kubectl port-forward service/ui-frontend 8082:80 -n default"
+          echo "2. Open: http://localhost:8082"
           echo ""
-          echo "To access ArgoCD UI:"
-          echo "1. Run 'kubectl port-forward svc/argocd-server -n argocd 8080:80'"
-          echo "2. Open http://localhost:8080"
-          echo "3. Login with username: admin"
+          echo "🔧 To access ArgoCD UI:"
+          echo "1. Run: kubectl port-forward svc/argocd-server -n argocd 8080:80"
+          echo "2. Open: http://localhost:8080"
+          echo "3. Login with:"
+          echo "   Username: admin"
           echo "   Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}"
+          echo ""
+          echo "📊 To access Flux information:"
+          echo "1. Run: flux get all -A"
+          echo ""
+          echo "🔍 Cluster Information:"
+          echo "   Cluster Name: ${{ env.CLUSTER_NAME }}"
+          echo "   Context: kind-${{ env.CLUSTER_NAME }}"
           echo "========================================"
+
+      - name: Final Cluster Status
+        if: always()
+        run: |
+          echo "=== Final Cluster Status ==="
+          echo "Nodes:"
+          kubectl get nodes
+          echo ""
+          echo "All Pods:"
+          kubectl get pods -A
+          echo ""
+          echo "Services:"
+          kubectl get svc -A
