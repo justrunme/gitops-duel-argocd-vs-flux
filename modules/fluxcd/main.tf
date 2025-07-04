@@ -50,10 +50,10 @@ resource "helm_release" "flux" {
   chart            = "flux2"
   version          = var.flux_version
   depends_on       = [kubernetes_namespace.flux]
-  set {
+  set = [{
     name  = "installCRDs"
     value = "true"
-  }
+  }]
 }
 
 resource "null_resource" "flux_crds_ready" {
