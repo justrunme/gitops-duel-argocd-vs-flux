@@ -3,11 +3,20 @@ FROM node:20-alpine as build
 
 WORKDIR /app
 
+# Копируем package файлы для кэширования зависимостей
 COPY package*.json ./
+
+# Копируем конфигурационные файлы
 COPY postcss.config.js ./
+COPY tailwind.config.js ./
+
+# Устанавливаем зависимости
+RUN npm install
+
+# Копируем остальное приложение
 COPY . .
 
-RUN npm install
+# Собираем приложение
 RUN npm run build
 
 # Этап продакшена
