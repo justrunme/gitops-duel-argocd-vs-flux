@@ -84,7 +84,7 @@ jobs:
         run: |
           echo "List all deployments in default:"
           kubectl get deployments -n default
-          echo "List all ArgoCD applications: Lexington"
+          echo "List all ArgoCD applications:"
           kubectl get applications -A
 
       - name: Simulate ArgoCD Deployment Issues
@@ -104,7 +104,7 @@ jobs:
         run: |
           # Получение паролей с проверкой существования секретов
           if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
-            ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{"".data.password""}" | base64 -d)
+            ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
             echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"
           else
             echo "ARGOCD_PASSWORD=admin" >> "$GITHUB_OUTPUT"
@@ -127,4 +127,4 @@ To access ArgoCD UI:
 3. Login with username: admin
    Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}
 ========================================
-EOF 
+EOF
