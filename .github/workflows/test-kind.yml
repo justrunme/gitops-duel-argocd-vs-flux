@@ -112,17 +112,19 @@ jobs:
 
       - name: Output Access Information
         run: |
-          echo "========================================"
-          echo "           Access Information           "
-          echo "========================================"
-          echo ""
-          echo "To access UI Dashboard:"
-          echo "1. Run 'kubectl port-forward service/ui-frontend 8082:80 -n default'"
-          echo "2. Open http://localhost:8082"
-          echo ""
-          echo "To access ArgoCD UI:"
-          echo "1. Run 'kubectl port-forward svc/argocd-server -n argocd 8080:80'"
-          echo "2. Open http://localhost:8080"
-          echo "3. Login with username: admin"
-          echo "   Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}"
-          echo "========================================
+          cat <<EOF
+========================================
+           Access Information           
+========================================
+
+To access UI Dashboard:
+1. Run 'kubectl port-forward service/ui-frontend 8082:80 -n default'
+2. Open http://localhost:8082
+
+To access ArgoCD UI:
+1. Run 'kubectl port-forward svc/argocd-server -n argocd 8080:80'
+2. Open http://localhost:8080
+3. Login with username: admin
+   Password: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}
+========================================
+EOF
