@@ -7,13 +7,13 @@ This repository serves as a comprehensive demonstration and comparison of ArgoCD
 ## ✨ Key Features
 
 *   **Side-by-Side Comparison:** Deploy and manage applications using both ArgoCD and Flux within the same Kubernetes cluster.
-*   **Unified Helm Chart Management:** Transitioned all sample application deployments to Helm charts, demonstrating a consistent approach across both GitOps tools.
-*   **Comprehensive CI/CD Pipeline:** A robust GitHub Actions workflow that automates:
+*   **Unified Helm Chart Management:** All sample application deployments are now consistently managed via Helm charts, demonstrating a unified approach across both GitOps tools.
+*   **Robust CI/CD Pipeline (GitHub Actions):** A single, consolidated GitHub Actions workflow automates:
     *   KinD cluster provisioning.
     *   Deployment of ArgoCD, Flux, and all sample applications.
     *   Building and deploying a custom UI for manifest comparison.
-    *   **Automated Error Simulation:** Tests the self-healing capabilities of ArgoCD and Flux by intentionally introducing discrepancies (e.g., deleting deployments, scaling replicas to zero) and verifying their recovery.
-    *   **Detailed Access Information:** Provides clear instructions and commands to access Grafana dashboards, the custom UI, and ArgoCD UI after a successful CI run.
+    *   **Automated Error Simulation:** Intentionally introduces discrepancies (e.g., deleting deployments, scaling replicas to zero) to rigorously test and verify the self-healing capabilities of ArgoCD and Flux.
+    *   **Detailed Access Information:** Provides clear instructions and commands to access Grafana dashboards, the custom UI, and ArgoCD UI after a successful CI run, including dynamic password retrieval.
 *   **Visual Monitoring with Grafana:** Integrated Grafana dashboards for both ArgoCD and Flux, allowing real-time monitoring of sync/suspend errors, reconciliation times, and overall system health.
 *   **Custom UI for Manifest Comparison:** A simple web application built with React and Tailwind CSS that:
     *   Lists all applications managed by ArgoCD and Flux.
@@ -148,7 +148,7 @@ While both ArgoCD and Flux are "pull-based" in the sense that they pull configur
 | **Sync Model**      | Pull-based, continuous reconciliation        | Pull-based, event-driven reconciliation        |
 | **Application Definition** | `Application` CRD                            | `Kustomization` and `HelmRelease` CRDs         |
 | **Helm Support**    | Excellent, native Helm chart support via `Application` CRD | Excellent, native `HelmRelease` CRD for managing Helm charts |
-| **Self-Healing**    | Actively detects and corrects drift          | Actively detects and corrects drift            |
+| **Self-Healing**    | Actively detects and corrects drift          | Actively detects and corrects drift            |\
 | **Extensibility**   | Plugins, custom resource support             | Highly extensible via GitOps Toolkit components |
 
 ## 💥 Error Simulation Scenarios
@@ -162,15 +162,41 @@ Each simulation includes a waiting period for self-healing and verification step
 
 ## 🔄 CI/CD Pipeline (`.github/workflows/test-kind.yml`)
 
-The CI/CD pipeline is structured into several jobs to ensure a robust and comprehensive testing and deployment process:
+The CI/CD pipeline is now consolidated into a single job, `gitops-duel-ci`, to ensure the KinD cluster persists throughout the entire workflow execution. This job performs the following steps sequentially:
 
-1.  **`setup-kind`**: Initializes the KinD cluster and installs necessary CLI tools (Terraform, Flux, ArgoCD).
-2.  **`deploy-core-components`**: Deploys ArgoCD and Flux into the KinD cluster using Terraform, including CRD readiness checks.
-3.  **`deploy-nginx-apps`**: Applies Terraform configurations to deploy the Nginx applications via ArgoCD and Flux using their respective Helm integrations.
-4.  **`build-and-deploy-ui`**: Builds Docker images for the custom UI backend and frontend, pushes them to Docker Hub, and deploys them to the KinD cluster.
-5.  **`verify-deployments`**: Performs comprehensive checks to ensure all deployed components (Nginx applications, UI backend, UI frontend) are running and reachable.
-6.  **`simulate-errors`**: Executes the error simulation scenarios to test self-healing.
-7.  **`output-access-info`**: Provides detailed instructions and commands to access Grafana, the custom UI, and ArgoCD UI, including dynamic password retrieval for Grafana and ArgoCD.
+1.  **`Checkout code`**: Checks out the repository code.
+2.  **`Setup KinD`**: Provisions a KinD Kubernetes cluster.
+3.  **`Setup Terraform`**: Installs and configures Terraform.
+4.  **`Install Flux CLI`**: Installs the Flux command-line interface.
+5.  **`Install ArgoCD CLI`**: Installs the ArgoCD command-line interface.
+6.  **`Terraform Init`**: Initializes the Terraform working directory.
+7.  **`Terraform Apply - Core Components (ArgoCD & Flux)`**: Applies Terraform configurations to deploy ArgoCD and Flux, including necessary CRD readiness checks.
+8.  **`Wait for ArgoCD server`**: Waits for the ArgoCD server deployment to be available.
+9.  **`Verify ArgoCD`**: Verifies the ArgoCD installation by checking its pods and applications.
+10. **`Verify FluxCD`**: Verifies the FluxCD installation by checking its components.
+11. **`Login to Docker Hub`**: Logs into Docker Hub to push images.
+12. **`Build and push UI Backend`**: Builds and pushes the Docker image for the UI backend.
+13. **`Build and push UI Frontend`**: Builds and pushes the Docker image for the UI frontend.
+14. **`Deploy UI`**: Deploys the UI backend and frontend to the Kubernetes cluster.
+15. **`Debug ArgoCD deployed apps`**: Provides debugging information for ArgoCD deployed applications.
+16. **`Simulate ArgoCD Deployment Issues`**: Executes the ArgoCD error simulation scenario.
+17. **`Simulate Flux Deployment Issues`**: Executes the Flux error simulation scenario.
+18. **`Get Access Information`**: Retrieves dynamic access information, including the ArgoCD admin password.
+19. **`Output Access Information`**: Prints detailed instructions for accessing the UI Dashboard, ArgoCD UI, and Grafana Dashboard.
+
+## ✅ Successful CI Runs and Fixes Applied
+
+Throughout the development of this project, several challenges were encountered and successfully resolved within the CI pipeline:
+
+*   **Terraform Syntax Errors:** Initial Terraform configurations contained syntax errors related to provider block types and `set` arguments, which were corrected to align with HCL syntax.
+*   **Terraform CRD Timing Issues:** Resolved issues where Terraform attempted to create Kubernetes resources before their Custom Resource Definitions (CRDs) were fully established in the cluster. This was addressed by implementing explicit waits for CRD readiness and, in some cases, switching to `kubectl_manifest` for better CRD lifecycle management.
+*   **Helm Release Conflicts:** Addressed "cannot re-use a name that is still in use" errors by ensuring conflicting Helm releases were uninstalled before new deployments.
+*   **Tailwind CSS PostCSS Configuration:** Fixed persistent build failures in the UI frontend related to Tailwind CSS's PostCSS plugin. This was resolved by downgrading Tailwind CSS to a version compatible with Create React App's internal PostCSS handling and correctly configuring `postcss.config.js`.
+*   **Kubectl Connection Errors in CI:** Resolved issues where `kubectl` could not connect to the Kubernetes cluster in the CI environment. This was fixed by ensuring the KinD cluster was properly provisioned and its `kubeconfig` was accessible within the same CI job.
+*   **Kubectl Command Syntax:** Corrected `kubectl` commands used in error simulation scenarios, specifically addressing the unsupported `--ignore-not-found` flag for `kubectl scale` and ensuring proper conditional execution.
+*   **YAML Syntax and Variable Interpolation:** Addressed various YAML syntax errors, particularly those related to `heredoc` blocks and the correct interpolation of GitHub Actions variables within shell scripts, ensuring robust and error-free execution.
+
+These fixes have contributed to a stable and reliable CI/CD pipeline, demonstrating the resilience and self-healing capabilities of both ArgoCD and Flux.
 
 ## 🔍 Verification and Debugging Commands
 
@@ -190,7 +216,7 @@ Here are some useful commands for verifying deployments and debugging issues:
     flux logs --kind=Kustomization --name=<kustomization-name> -n <namespace>
     flux logs --kind=HelmRelease --name=<helmrelease-name> -n <namespace>
     ```
-*   **Kubernetes (General):**
+*   **Kubernetes (General):
     ```bash
     kubectl get pods -n default
     kubectl get deployments -n default
