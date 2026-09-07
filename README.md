@@ -1,5 +1,10 @@
 # GitOps Duel: ArgoCD vs Flux
 
+[![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/gitops-argocd-flux/)
+
+Case study: [GitOps: Argo CD & Flux](https://justrunme.com/cases/gitops-argocd-flux/) · [Andrey Lesnikov](https://justrunme.com/)
+Related on site: [Argo CD App of Apps](https://justrunme.com/cases/argocd-app-of-apps/) · [Multi-Region GitOps](https://justrunme.com/cases/multi-region-gitops/)
+
 ![GitOps Duel CI](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml/badge.svg)
 
 This repository serves as a comprehensive demonstration and comparison of ArgoCD and Flux, two leading GitOps tools for Kubernetes. It showcases their distinct approaches to continuous delivery, self-healing capabilities, and provides a visual interface for comparing application states.
