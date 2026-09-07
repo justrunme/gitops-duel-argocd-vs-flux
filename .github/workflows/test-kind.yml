@@ -20,7 +20,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.x
+          terraform_version: 1.9.8
 
       - name: Install Flux CLI
         run: |
@@ -61,21 +61,12 @@ jobs:
           flux get all -A
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push UI Backend
+      - name: Build UI images for KinD
         run: |
           docker build -t justrunme/gitops-duel-ui-backend:latest ./ui-backend
-          docker push justrunme/gitops-duel-ui-backend:latest
-
-      - name: Build and push UI Frontend
-        run: |
           docker build -t justrunme/gitops-duel-ui-frontend:latest ./ui-frontend
-          docker push justrunme/gitops-duel-ui-frontend:latest
+          kind load docker-image justrunme/gitops-duel-ui-backend:latest --name kind
+          kind load docker-image justrunme/gitops-duel-ui-frontend:latest --name kind
 
       - name: Deploy UI
         run: kubectl apply -f kubernetes/ui/
