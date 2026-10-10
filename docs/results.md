@@ -4,13 +4,13 @@ Automated performance comparison between Argo CD and Flux.
 
 ## Metrics
 
-Performance metrics are measured in the CI pipeline for:
-- **Time to Ready**: Time from deployment creation to first Synced/Ready state
-- **Time to Self-Heal**: Time to recover after manual drift (scaling replicas to 0)
-- **Time to Rollback**: Time to recover after deployment deletion
+| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) |
+|------|-------------------|----------------------|---------------------|
 
-Results are automatically updated on each CI run.
+Results are written by CI (`demo-results` / `test-kind` workflows) and committed from the uploaded artifact. See the source Actions run linked from the README Results table once populated.
 
-## Latest Results
+## How metrics are measured
 
-See the latest CI run for current performance metrics.
+- **Time to Ready**: deployment creation → first Synced/Ready
+- **Time to Self-Heal**: recover after scaling replicas to 0
+- **Time to Rollback**: recover after deployment deletion

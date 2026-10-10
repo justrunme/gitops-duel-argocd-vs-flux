@@ -283,6 +283,34 @@ Here are some useful commands for verifying deployments and debugging issues:
     kubectl get all -n monitoring
     ```
 
+## Demo
+
+KinD CI runs Argo CD vs Flux benchmarks (time-to-ready / self-heal / rollback). The terminal recording is produced by the `demo-results` workflow:
+
+```bash
+bash .github/scripts/run-benchmark-demo.sh
+```
+
+<!-- demo asset filled after first successful demo-results artifact download:
+<p align="center">
+  <img src="docs/assets/gitops-duel.svg" alt="GitOps duel benchmark terminal: Argo CD vs Flux timings" width="100%" />
+</p>
+-->
+
+Full comparison notes: [docs/results.md](docs/results.md)
+
+## Results
+
+Measured in CI (not estimates). Table values are taken from the latest uploaded `docs/results.json` artifact and linked to that Actions run.
+
+| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) | Source |
+|------|-------------------:|----------------------:|---------------------:|--------|
+| Argo CD | _pending CI artifact_ | _pending_ | _pending_ | see `demo-results` / `test-kind` |
+| Flux | _pending CI artifact_ | _pending_ | _pending_ | same |
+
+Once the `demo-results` workflow completes on this branch, numbers and `docs/assets/gitops-duel.svg` are committed from the artifact.
+
+
 ## 📸 Screenshots
 
 (Add screenshots here for ArgoCD UI, Flux UI (if any), Grafana Dashboards, and the custom UI comparison tool)

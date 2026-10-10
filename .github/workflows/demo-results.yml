@@ -1,0 +1,60 @@
+name: Demo results
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "57 5 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/demo-results.yml"
+      - ".github/scripts/run-benchmark-demo.sh"
+      - ".github/scripts/benchmark-gitops.sh"
+      - ".github/scripts/write_demo_results.py"
+
+jobs:
+  gitops-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup KinD
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: kind
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Install CLIs and recorders
+        run: |
+          curl -s https://fluxcd.io/install.sh | sudo bash
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd && sudo mv argocd /usr/local/bin/
+          python -m pip install asciinema
+          npm install -g svg-term-cli
+      - name: Terraform apply core
+        run: |
+          terraform init
+          terraform apply -target=module.argocd.kubernetes_namespace.argocd -auto-approve
+          terraform apply -target=module.argocd.helm_release.argocd -auto-approve
+          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+          terraform apply -target=module.argocd.kubernetes_manifest.argocd_nginx_app -auto-approve
+          terraform apply -target=module.argocd.kubernetes_manifest.argocd_helm_nginx_app -auto-approve
+          terraform apply -auto-approve
+          kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
+          kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
+      - name: Record benchmarks
+        run: |
+          mkdir -p docs/assets
+          chmod +x .github/scripts/run-benchmark-demo.sh .github/scripts/benchmark-gitops.sh
+          asciinema rec --overwrite -c 'bash .github/scripts/run-benchmark-demo.sh' docs/assets/gitops-duel.cast
+          svg-term --in docs/assets/gitops-duel.cast --out docs/assets/gitops-duel.svg --window --width 100 --height 24 --no-cursor
+          python3 .github/scripts/write_demo_results.py
+          cat docs/results.md
+          cat docs/results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-results
+          path: |
+            docs/results.md
+            docs/results.json
+            docs/assets/gitops-duel.cast
+            docs/assets/gitops-duel.svg
