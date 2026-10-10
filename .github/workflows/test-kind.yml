@@ -61,6 +61,50 @@ jobs:
           flux get all -A
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
 
+      - name: Run Performance Benchmarks
+        id: benchmark
+        run: |
+          mkdir -p docs
+          
+          echo "# GitOps Performance Benchmarks" > docs/results.md
+          echo "" >> docs/results.md
+          echo "Automated performance comparison between Argo CD and Flux." >> docs/results.md
+          echo "" >> docs/results.md
+          echo "## Metrics" >> docs/results.md
+          echo "" >> docs/results.md
+          echo "| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) |" >> docs/results.md
+          echo "|------|-------------------|----------------------|---------------------|" >> docs/results.md
+          
+          echo "Running Argo CD benchmarks..."
+          argocd_results=$(.github/scripts/benchmark-gitops.sh default nginx-app argocd | tail -1)
+          argocd_ready=$(echo $argocd_results | cut -d',' -f1)
+          argocd_heal=$(echo $argocd_results | cut -d',' -f2)
+          argocd_rollback=$(echo $argocd_results | cut -d',' -f3)
+          
+          echo "| Argo CD | ${argocd_ready} | ${argocd_heal} | ${argocd_rollback} |" >> docs/results.md
+          
+          terraform apply -auto-approve
+          sleep 30
+          
+          echo "Running Flux benchmarks..."
+          flux_results=$(.github/scripts/benchmark-gitops.sh default nginx-app flux | tail -1)
+          flux_ready=$(echo $flux_results | cut -d',' -f1)
+          flux_heal=$(echo $flux_results | cut -d',' -f2)
+          flux_rollback=$(echo $flux_results | cut -d',' -f3)
+          
+          echo "| Flux | ${flux_ready} | ${flux_heal} | ${flux_rollback} |" >> docs/results.md
+          echo "" >> docs/results.md
+          echo "Run date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> docs/results.md
+          
+          cat docs/results.md >> $GITHUB_STEP_SUMMARY
+          
+          echo "argocd_ready=${argocd_ready}" >> $GITHUB_OUTPUT
+          echo "argocd_heal=${argocd_heal}" >> $GITHUB_OUTPUT
+          echo "argocd_rollback=${argocd_rollback}" >> $GITHUB_OUTPUT
+          echo "flux_ready=${flux_ready}" >> $GITHUB_OUTPUT
+          echo "flux_heal=${flux_heal}" >> $GITHUB_OUTPUT
+          echo "flux_rollback=${flux_rollback}" >> $GITHUB_OUTPUT
+
       - name: Build UI images for KinD
         run: |
           docker build -t justrunme/gitops-duel-ui-backend:latest ./ui-backend
