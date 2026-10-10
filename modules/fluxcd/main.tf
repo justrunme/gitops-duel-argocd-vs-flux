@@ -43,6 +43,12 @@ resource "kubernetes_namespace" "flux" {
   }
 }
 
+resource "kubernetes_namespace" "target" {
+  metadata {
+    name = var.target_namespace
+  }
+}
+
 resource "helm_release" "flux" {
   name             = "flux2"
   namespace        = kubernetes_namespace.flux.metadata[0].name
@@ -65,7 +71,8 @@ resource "kubectl_manifest" "flux_git_repository" {
       name: local-repo
       namespace: ${var.flux_namespace}
     spec:
-      interval: 1m
+      interval: 10s
+      timeout: 60s
       url: ${var.git_repository_url}
       ref:
         branch: ${var.git_branch}
@@ -73,7 +80,10 @@ resource "kubectl_manifest" "flux_git_repository" {
 }
 
 resource "kubectl_manifest" "flux_kustomization" {
-  depends_on = [kubectl_manifest.flux_git_repository]
+  depends_on = [
+    kubectl_manifest.flux_git_repository,
+    kubernetes_namespace.target,
+  ]
   yaml_body = <<-EOT
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -81,9 +91,12 @@ resource "kubectl_manifest" "flux_kustomization" {
       name: flux-nginx-app
       namespace: ${var.flux_namespace}
     spec:
-      interval: 1m
+      interval: 10s
+      timeout: 60s
+      retryInterval: 10s
       path: "./apps/flux/nginx"
       prune: true
+      wait: true
       targetNamespace: ${var.target_namespace}
       sourceRef:
         kind: GitRepository

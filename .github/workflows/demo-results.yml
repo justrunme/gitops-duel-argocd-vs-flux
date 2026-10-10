@@ -10,10 +10,21 @@ on:
       - ".github/scripts/run-benchmark-demo.sh"
       - ".github/scripts/benchmark-gitops.sh"
       - ".github/scripts/write_demo_results.py"
+      - "apps/**"
+      - "modules/**"
+      - "main.tf"
+      - "variables.tf"
 
 jobs:
   gitops-benchmark:
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_git_repository_url: https://github.com/justrunme/gitops-duel-argocd-vs-flux.git
+      TF_VAR_git_branch: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      TF_VAR_argocd_target_namespace: argocd-demo
+      TF_VAR_flux_target_namespace: flux-demo
+      ARGO_TARGET_NAMESPACE: argocd-demo
+      FLUX_TARGET_NAMESPACE: flux-demo
     steps:
       - uses: actions/checkout@v4
       - name: Setup KinD
@@ -23,6 +34,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+          terraform_wrapper: false
       - name: Install CLIs and recorders
         run: |
           curl -s https://fluxcd.io/install.sh | sudo bash
@@ -30,12 +42,16 @@ jobs:
           chmod +x argocd && sudo mv argocd /usr/local/bin/
           python -m pip install asciinema
           npm install -g svg-term-cli
+      - name: Show GitOps source revision
+        run: |
+          echo "Tracking repo=${TF_VAR_git_repository_url} branch=${TF_VAR_git_branch}"
       - name: Terraform apply core
         run: |
           terraform init
           terraform apply -target=module.argocd.kubernetes_namespace.argocd -auto-approve
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
-          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
+          terraform apply -target=module.argocd.kubernetes_namespace.target -auto-approve
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_nginx_app -auto-approve
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_helm_nginx_app -auto-approve
           terraform apply -auto-approve
@@ -50,7 +66,20 @@ jobs:
           python3 .github/scripts/write_demo_results.py
           cat docs/results.md
           cat docs/results.json
+          # Fail the job if any cell is non-numeric
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open("docs/results.json"))
+          ok = True
+          for tool, m in data.get("metrics", {}).items():
+              for k, v in m.items():
+                  if not re.fullmatch(r"\d+", str(v).strip()):
+                      print(f"INVALID {tool}.{k}={v!r}", file=sys.stderr)
+                      ok = False
+          sys.exit(0 if ok else 1)
+          PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: demo-results
           path: |
