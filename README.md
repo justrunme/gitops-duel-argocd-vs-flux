@@ -6,6 +6,7 @@ Side-by-side GitOps comparison of Argo CD and Flux on Kubernetes.
 [![Release](https://img.shields.io/github/v/release/justrunme/gitops-duel-argocd-vs-flux?display_name=tag)](https://github.com/justrunme/gitops-duel-argocd-vs-flux/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/gitops-argocd-flux/)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/justrunme/gitops-duel-argocd-vs-flux/badge)](https://securityscorecards.dev/viewer/?uri=github.com/justrunme/gitops-duel-argocd-vs-flux)
 
 Case study: [GitOps: Argo CD & Flux](https://justrunme.com/cases/gitops-argocd-flux/) · [Andrey Lesnikov](https://justrunme.com/)
 
