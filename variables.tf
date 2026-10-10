@@ -34,8 +34,21 @@ variable "flux_namespace" {
   default     = "flux-system"
 }
 
+variable "argocd_target_namespace" {
+  description = "Target namespace for Argo CD demo applications"
+  type        = string
+  default     = "argocd-demo"
+}
+
+variable "flux_target_namespace" {
+  description = "Target namespace for Flux demo applications"
+  type        = string
+  default     = "flux-demo"
+}
+
+# Kept for backward compatibility with older module call sites / docs.
 variable "target_namespace" {
-  description = "Target namespace for applications"
+  description = "Deprecated: use argocd_target_namespace / flux_target_namespace"
   type        = string
   default     = "default"
 }
