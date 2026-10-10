@@ -2,7 +2,7 @@ name: GitOps Duel CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, chore/repo-hygiene-and-upgrade-f09b ]
   pull_request:
 
 jobs:
