@@ -27,6 +27,21 @@ terraform apply -auto-approve
 kubectl apply -f kubernetes/ui/
 ```
 
+## Architecture
+
+```mermaid
+flowchart TB
+  TF[main.tf + modules/argocd + modules/fluxcd] --> Cluster[Kind / local cluster]
+  Cluster --> Argo[Argo CD]
+  Cluster --> Flux[Flux]
+  Argo --> AppA[apps/argocd helm-nginx]
+  Flux --> AppF[apps/flux helm-nginx]
+  AppA --> Chart[charts/nginx]
+  AppF --> Chart
+  UI[kubernetes/ui + ui-backend/frontend] --> Cluster
+  CI[.github/workflows/test-kind.yml] --> TF
+```
+
 ## On justrunme.com
 
 This repository is the public evidence base for:
