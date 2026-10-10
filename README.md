@@ -1,8 +1,46 @@
-# GitOps Duel: ArgoCD vs Flux
+# GitOps Duel: Argo CD vs Flux
 
-[![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/gitops-argocd-flux/)
+Side-by-side GitOps comparison of Argo CD and Flux on Kubernetes.
+
+[![CI](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml/badge.svg)](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml)
+[![Release](https://img.shields.io/github/v/release/justrunme/gitops-duel-argocd-vs-flux?display_name=tag)](https://github.com/justrunme/gitops-duel-argocd-vs-flux/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Case study: [GitOps: Argo CD & Flux](https://justrunme.com/cases/gitops-argocd-flux/) · [Andrey Lesnikov](https://justrunme.com/)
+
+## What it does
+
+- Deploys Argo CD and Flux in one cluster and syncs sample Helm Nginx apps through both
+- Runs Kind-based CI that measures sync/self-heal/rollback behavior and error simulation
+- Ships a small UI to compare desired Git state with live Kubernetes manifests
+
+## Why
+
+- Choosing a GitOps engine is clearer when both tools run the same apps under the same failure drills
+- Performance and healing claims stay tied to CI evidence in `docs/results.md`
+
+## Quickstart
+
+```bash
+terraform init
+terraform apply -auto-approve
+kubectl apply -f kubernetes/ui/
+```
+
+## Architecture
+
+```mermaid
+flowchart TB
+  TF[main.tf + modules/argocd + modules/fluxcd] --> Cluster[Kind / local cluster]
+  Cluster --> Argo[Argo CD]
+  Cluster --> Flux[Flux]
+  Argo --> AppA[apps/argocd helm-nginx]
+  Flux --> AppF[apps/flux helm-nginx]
+  AppA --> Chart[charts/nginx]
+  AppF --> Chart
+  UI[kubernetes/ui + ui-backend/frontend] --> Cluster
+  CI[.github/workflows/test-kind.yml] --> TF
+```
 
 ## On justrunme.com
 
@@ -15,7 +53,6 @@ This repository is the public evidence base for:
 | Multi-Region GitOps | https://justrunme.com/cases/multi-region-gitops/ |
 
 Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
-
 
 ![GitOps Duel CI](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml/badge.svg)
 
