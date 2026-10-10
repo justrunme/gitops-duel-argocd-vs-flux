@@ -90,6 +90,7 @@ jobs:
               "Argo CD": ("argocd_ready", "argocd_heal", "argocd_rollback"),
               "Flux": ("flux_ready", "flux_heal", "flux_rollback"),
           }
+          num = re.compile(r"\d+(?:\.\d+)?")
           outs = []
           for tool, keys in mapping.items():
               m = data["metrics"][tool]
@@ -98,10 +99,13 @@ jobs:
                   m["time_to_self_heal_seconds"],
                   m["time_to_rollback_seconds"],
               ]
-              for k, v in zip(keys, vals):
+              for idx, (k, v) in enumerate(zip(keys, vals)):
                   v = str(v).strip()
-                  if not re.fullmatch(r"\d+", v):
+                  if not num.fullmatch(v):
                       print(f"Non-numeric benchmark value: {tool} {k}={v!r}", file=sys.stderr)
+                      sys.exit(1)
+                  if idx == 0 and float(v) <= 0:
+                      print(f"time_to_ready must be > 0: {tool} {k}={v!r}", file=sys.stderr)
                       sys.exit(1)
                   outs.append(f"{k}={v}")
           Path = __import__("pathlib").Path
