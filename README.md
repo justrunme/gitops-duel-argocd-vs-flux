@@ -305,8 +305,8 @@ Measured in CI (not estimates). Table values are taken from the latest uploaded 
 
 | Tool | Time to Ready | Time to Self-Heal | Time to Rollback | Source |
 |------|---------------|-------------------|------------------|--------|
-| Argo CD | 0s | 2s | 5s | [38089699018](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38089699018) |
-| Flux | 0s | 9s | 14s | same |
+| Argo CD | 4.695s | 3.156s | 4.621s | [38090813003](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38090813003) |
+| Flux | 6.803s | 13.326s | 69.040s | same |
 
 Values are copied from the CI artifact (not estimates). Details: [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
 

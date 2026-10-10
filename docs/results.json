@@ -1,17 +1,17 @@
 {
   "repo": "gitops-duel-argocd-vs-flux",
-  "source_run": "https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38089699018",
-  "measured_at": "2026-10-10T22:02:02Z",
+  "source_run": "https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38090813003",
+  "measured_at": "2026-10-10T22:21:03Z",
   "metrics": {
     "Argo CD": {
-      "time_to_ready_seconds": "0",
-      "time_to_self_heal_seconds": "2",
-      "time_to_rollback_seconds": "5"
+      "time_to_ready_seconds": "4.695",
+      "time_to_self_heal_seconds": "3.156",
+      "time_to_rollback_seconds": "4.621"
     },
     "Flux": {
-      "time_to_ready_seconds": "0",
-      "time_to_self_heal_seconds": "9",
-      "time_to_rollback_seconds": "14"
+      "time_to_ready_seconds": "6.803",
+      "time_to_self_heal_seconds": "13.326",
+      "time_to_rollback_seconds": "69.040"
     }
   }
 }
