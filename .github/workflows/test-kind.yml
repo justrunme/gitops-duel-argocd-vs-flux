@@ -83,23 +83,32 @@ jobs:
           python3 .github/scripts/write_demo_results.py
           cat docs/results.md >> "$GITHUB_STEP_SUMMARY"
 
-          argocd_ready=$(awk -F'|' '/Argo CD/ {gsub(/ /,"",$3); print $3; exit}' docs/results.md)
-          argocd_heal=$(awk -F'|' '/Argo CD/ {gsub(/ /,"",$4); print $4; exit}' docs/results.md)
-          argocd_rollback=$(awk -F'|' '/Argo CD/ {gsub(/ /,"",$5); print $5; exit}' docs/results.md)
-          flux_ready=$(awk -F'|' '/Flux/ {gsub(/ /,"",$3); print $3; exit}' docs/results.md)
-          flux_heal=$(awk -F'|' '/Flux/ {gsub(/ /,"",$4); print $4; exit}' docs/results.md)
-          flux_rollback=$(awk -F'|' '/Flux/ {gsub(/ /,"",$5); print $5; exit}' docs/results.md)
-
-          for v in "$argocd_ready" "$argocd_heal" "$argocd_rollback" "$flux_ready" "$flux_heal" "$flux_rollback"; do
-            [[ "$v" =~ ^[0-9]+$ ]] || { echo "Non-numeric benchmark value: $v"; exit 1; }
-          done
-
-          echo "argocd_ready=${argocd_ready}" >> "$GITHUB_OUTPUT"
-          echo "argocd_heal=${argocd_heal}" >> "$GITHUB_OUTPUT"
-          echo "argocd_rollback=${argocd_rollback}" >> "$GITHUB_OUTPUT"
-          echo "flux_ready=${flux_ready}" >> "$GITHUB_OUTPUT"
-          echo "flux_heal=${flux_heal}" >> "$GITHUB_OUTPUT"
-          echo "flux_rollback=${flux_rollback}" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open("docs/results.json"))
+          mapping = {
+              "Argo CD": ("argocd_ready", "argocd_heal", "argocd_rollback"),
+              "Flux": ("flux_ready", "flux_heal", "flux_rollback"),
+          }
+          outs = []
+          for tool, keys in mapping.items():
+              m = data["metrics"][tool]
+              vals = [
+                  m["time_to_ready_seconds"],
+                  m["time_to_self_heal_seconds"],
+                  m["time_to_rollback_seconds"],
+              ]
+              for k, v in zip(keys, vals):
+                  v = str(v).strip()
+                  if not re.fullmatch(r"\d+", v):
+                      print(f"Non-numeric benchmark value: {tool} {k}={v!r}", file=sys.stderr)
+                      sys.exit(1)
+                  outs.append(f"{k}={v}")
+          Path = __import__("pathlib").Path
+          Path("/tmp/bench_out.env").write_text("\n".join(outs) + "\n")
+          print("\n".join(outs))
+          PY
+          cat /tmp/bench_out.env >> "$GITHUB_OUTPUT"
 
       - name: Build UI images for KinD
         run: |
