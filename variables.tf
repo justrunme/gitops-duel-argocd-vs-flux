@@ -1,13 +1,13 @@
 variable "argocd_version" {
   description = "Version of ArgoCD Helm chart"
   type        = string
-  default     = "5.51.6"
+  default     = "9.0.0"
 }
 
 variable "flux_version" {
   description = "Version of Flux2 Helm chart"
   type        = string
-  default     = "2.11.1"
+  default     = "2.14.0"
 }
 
 variable "git_repository_url" {

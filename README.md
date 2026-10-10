@@ -24,6 +24,7 @@ This repository serves as a comprehensive demonstration and comparison of ArgoCD
 ## ✨ Key Features
 
 *   **Side-by-Side Comparison:** Deploy and manage applications using both ArgoCD and Flux within the same Kubernetes cluster.
+*   **Performance Benchmarking:** Automated CI pipeline measures and compares real-world performance metrics (time to ready, self-healing, rollback). See [Performance Results](docs/results.md).
 *   **Unified Helm Chart Management:** All sample application deployments are now consistently managed via Helm charts, demonstrating a unified approach across both GitOps tools.
 *   **Robust CI/CD Pipeline (GitHub Actions):** A single, consolidated GitHub Actions workflow automates:
     *   KinD cluster provisioning.
