@@ -135,14 +135,25 @@ jobs:
       - name: Simulate ArgoCD Deployment Issues
         run: |
           kubectl get deployment nginx-app -n argocd-demo
-          kubectl delete deployment nginx-app -n argocd-demo
-          kubectl wait --for=condition=available deployment/nginx-app -n argocd-demo --timeout=300s
+          kubectl delete deployment nginx-app -n argocd-demo --wait=true --timeout=60s
+          # kubectl wait fails if the object is missing; poll until Argo recreates it
+          for i in $(seq 1 60); do
+            if kubectl get deployment nginx-app -n argocd-demo >/dev/null 2>&1; then
+              if kubectl wait --for=condition=available deployment/nginx-app -n argocd-demo --timeout=30s; then
+                echo "Argo CD restored deployment"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Argo CD did not restore deployment in time"
+          kubectl get application nginx-app -n argocd -o yaml || true
+          exit 1
 
       - name: Simulate Flux Deployment Issues
         run: |
           kubectl get deployment nginx-app -n flux-demo
           kubectl scale deployment nginx-app --replicas=0 -n flux-demo
-          # Wait until Flux restores desired replicas
           for i in $(seq 1 60); do
             cur=$(kubectl get deployment nginx-app -n flux-demo -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
             ready=$(kubectl get deployment nginx-app -n flux-demo -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
@@ -153,6 +164,7 @@ jobs:
             sleep 5
           done
           echo "Flux did not restore deployment in time"
+          kubectl get kustomization flux-nginx-app -n flux-system -o yaml || true
           exit 1
 
       - name: Get Access Information

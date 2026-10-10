@@ -305,8 +305,8 @@ Measured in CI (not estimates). Table values are taken from the latest uploaded 
 
 | Tool | Time to Ready | Time to Self-Heal | Time to Rollback | Source |
 |------|---------------|-------------------|------------------|--------|
-| Argo CD | timeout (300s) | 0 (deployment not found) | 0 (deployment not found) | [38084720453](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38084720453) |
-| Flux | 0 (deployment not found) | 0 (deployment not found) | 0 (deployment not found) | same |
+| Argo CD | 0s | 2s | 5s | [38089699018](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38089699018) |
+| Flux | 0s | 9s | 14s | same |
 
 Values are copied from the CI artifact (not estimates). Details: [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
 
