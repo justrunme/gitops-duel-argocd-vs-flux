@@ -15,7 +15,7 @@ measure_time_to_ready() {
     local timeout=300
     local elapsed=0
     
-    echo "Measuring time to first Ready/Synced state..."
+    echo "Measuring time to first Ready/Synced state..." >&2
     
     if [ "${GITOPS_TOOL}" == "argocd" ]; then
         while [ $elapsed -lt $timeout ]; do
@@ -46,7 +46,7 @@ measure_time_to_ready() {
 }
 
 measure_self_heal() {
-    echo "Measuring self-heal time after manual drift..."
+    echo "Measuring self-heal time after manual drift..." >&2
     
     if ! kubectl get deployment ${APP_NAME} -n ${NAMESPACE} >/dev/null 2>&1; then
         echo "0 (deployment not found)"
@@ -81,7 +81,7 @@ measure_self_heal() {
 }
 
 measure_rollback() {
-    echo "Measuring rollback time..."
+    echo "Measuring rollback time..." >&2
     
     if ! kubectl get deployment ${APP_NAME} -n ${NAMESPACE} >/dev/null 2>&1; then
         echo "0 (deployment not found)"
