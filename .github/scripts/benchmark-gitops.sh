@@ -8,15 +8,70 @@ NAMESPACE=${1:-argocd-demo}
 APP_NAME=${2:-nginx-app}
 GITOPS_TOOL=${3:-argocd}
 TIMEOUT=${BENCHMARK_TIMEOUT:-300}
+REPO_URL=${TF_VAR_git_repository_url:-https://github.com/justrunme/gitops-duel-argocd-vs-flux.git}
+GIT_BRANCH=${TF_VAR_git_branch:-main}
+POLL_INTERVAL=${BENCHMARK_POLL_INTERVAL:-0.5}
 
 log() { printf '%s\n' "$*" >&2; }
-fail() { log "ERROR: $*"; echo "failed" >&2; return 1; }
+fail() { log "ERROR: $*"; return 1; }
 
-log "=== GitOps Performance Benchmark: ${GITOPS_TOOL} ==="
-log "Namespace: ${NAMESPACE}"
-log "Application: ${APP_NAME}"
-log "Timeout: ${TIMEOUT}s"
-log ""
+now() { date +%s.%N; }
+
+# Elapsed seconds between start and now, 3 decimal places
+elapsed_since() {
+  local start=$1
+  awk -v s="${start}" -v e="$(now)" 'BEGIN { printf "%.3f", e - s }'
+}
+
+elapsed_int() {
+  local start=$1
+  awk -v s="${start}" -v e="$(now)" 'BEGIN { printf "%d", e - s }'
+}
+
+# Accept integers or decimals; reject empty / non-numeric / masked strings
+assert_numeric() {
+  local label=$1 value=$2
+  if ! [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    fail "${label} produced non-numeric result: '${value}'"
+    return 1
+  fi
+}
+
+# Time-to-Ready must be a real cold-start measurement (> 0)
+assert_ready_credible() {
+  local value=$1
+  assert_numeric "time_to_ready" "${value}"
+  awk -v v="${value}" 'BEGIN { exit (v > 0 ? 0 : 1) }' \
+    || fail "time_to_ready=${value}s is not credible (timer likely started after the workload was already ready)"
+}
+
+deployment_available() {
+  kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1 || return 1
+  local desired ready
+  desired=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+  ready=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+  desired=${desired:-0}
+  ready=${ready:-0}
+  [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]
+}
+
+ensure_namespace() {
+  kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+}
+
+# Remove workload objects so the next sync is a cold create
+wipe_workload() {
+  kubectl delete deployment "${APP_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=90s >/dev/null 2>&1 || true
+  kubectl delete service "${APP_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
+  local deadline=$(( $(date +%s) + 60 ))
+  while kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "${deadline}" ]; then
+      fail "deployment/${APP_NAME} still present in ${NAMESPACE} after wipe"
+      return 1
+    fi
+    sleep 0.5
+  done
+}
 
 require_deployment() {
   if ! kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
@@ -25,92 +80,147 @@ require_deployment() {
   fi
 }
 
-wait_deployment_available() {
-  local start_time=$1
-  local elapsed=0
-  while [ "${elapsed}" -lt "${TIMEOUT}" ]; do
-    if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-      local desired ready
-      desired=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-      ready=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-      desired=${desired:-0}
-      ready=${ready:-0}
-      if [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]; then
-        local end_time
-        end_time=$(date +%s)
-        echo $((end_time - start_time))
-        return 0
-      fi
-    fi
-    sleep 2
-    elapsed=$(($(date +%s) - start_time))
-  done
-  fail "deployment/${APP_NAME} not Available within ${TIMEOUT}s"
-  return 1
+log "=== GitOps Performance Benchmark: ${GITOPS_TOOL} ==="
+log "Namespace: ${NAMESPACE}"
+log "Application: ${APP_NAME}"
+log "Repo: ${REPO_URL} @ ${GIT_BRANCH}"
+log "Timeout: ${TIMEOUT}s"
+log ""
+
+create_argocd_application() {
+  cat <<YAML | kubectl apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ${APP_NAME}
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ${REPO_URL}
+    targetRevision: ${GIT_BRANCH}
+    path: apps/argocd/nginx
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${NAMESPACE}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+YAML
+}
+
+create_flux_kustomization() {
+  cat <<YAML | kubectl apply -f -
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-nginx-app
+  namespace: flux-system
+spec:
+  interval: 10s
+  timeout: 60s
+  retryInterval: 10s
+  path: ./apps/flux/nginx
+  prune: true
+  wait: true
+  targetNamespace: ${NAMESPACE}
+  sourceRef:
+    kind: GitRepository
+    name: local-repo
+YAML
 }
 
 measure_time_to_ready() {
-  local start_time
-  start_time=$(date +%s)
-  local elapsed=0
+  log "Measuring time to Ready from Application/Kustomization creation (cold start)..."
 
-  log "Measuring time to first Ready/Synced state..."
+  ensure_namespace
 
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
-    while [ "${elapsed}" -lt "${TIMEOUT}" ]; do
+    # Prefer live values from an existing Application when present
+    if kubectl get application "${APP_NAME}" -n argocd >/dev/null 2>&1; then
+      REPO_URL=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.spec.source.repoURL}')
+      GIT_BRANCH=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.spec.source.targetRevision}')
+      log "Using existing Application source: ${REPO_URL} @ ${GIT_BRANCH}"
+    fi
+
+    # Tear down Application (prune) and wipe any leftover workload
+    kubectl delete application "${APP_NAME}" -n argocd --ignore-not-found --wait=true --timeout=120s >/dev/null
+    wipe_workload
+
+    if kubectl get application "${APP_NAME}" -n argocd >/dev/null 2>&1; then
+      fail "Argo CD Application ${APP_NAME} still exists after delete"
+      return 1
+    fi
+    if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+      fail "deployment/${APP_NAME} still exists in ${NAMESPACE} before cold start"
+      return 1
+    fi
+
+    local start_time
+    start_time=$(now)
+    create_argocd_application >/dev/null
+
+    while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
       local sync health
       sync=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
       health=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
-      if [ "${sync}" = "Synced" ] && [ "${health}" = "Healthy" ]; then
-        # Also require the workload itself to be ready
-        if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-          local desired ready
-          desired=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-          ready=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-          if [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]; then
-            local end_time
-            end_time=$(date +%s)
-            echo $((end_time - start_time))
-            return 0
-          fi
-        fi
+      if [ "${sync}" = "Synced" ] && [ "${health}" = "Healthy" ] && deployment_available; then
+        elapsed_since "${start_time}"
+        return 0
       fi
-      sleep 2
-      elapsed=$(($(date +%s) - start_time))
+      sleep "${POLL_INTERVAL}"
     done
-    local sync_final health_final msg_final
-    sync_final=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "missing")
-    health_final=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "missing")
-    msg_final=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.conditions[-1].message}' 2>/dev/null || true)
+
     kubectl get application "${APP_NAME}" -n argocd -o yaml >&2 || true
-    fail "Argo CD app not Synced/Healthy within ${TIMEOUT}s (sync=${sync_final} health=${health_final} msg=${msg_final})"
+    kubectl get deploy,svc,pods -n "${NAMESPACE}" >&2 || true
+    fail "Argo CD cold-start not Synced/Healthy+Available within ${TIMEOUT}s"
     return 1
   fi
 
-  # Flux: wait for Kustomization Ready, then deployment Available
-  while [ "${elapsed}" -lt "${TIMEOUT}" ]; do
+  # Flux path
+  if kubectl get kustomization flux-nginx-app -n flux-system >/dev/null 2>&1; then
+    log "Recreating Flux Kustomization flux-nginx-app (GitRepository kept)"
+  fi
+  if ! kubectl get gitrepository local-repo -n flux-system >/dev/null 2>&1; then
+    fail "Flux GitRepository local-repo not found in flux-system (required for cold start)"
+    return 1
+  fi
+
+  kubectl delete kustomization flux-nginx-app -n flux-system --ignore-not-found --wait=true --timeout=120s >/dev/null
+  wipe_workload
+
+  if kubectl get kustomization flux-nginx-app -n flux-system >/dev/null 2>&1; then
+    fail "Flux Kustomization flux-nginx-app still exists after delete"
+    return 1
+  fi
+  if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    fail "deployment/${APP_NAME} still exists in ${NAMESPACE} before cold start"
+    return 1
+  fi
+
+  local start_time
+  start_time=$(now)
+  create_flux_kustomization >/dev/null
+
+  while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
     local ready_status
     ready_status=$(kubectl get kustomization flux-nginx-app -n flux-system \
       -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-    if [ "${ready_status}" = "True" ]; then
-      if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-        local desired ready
-        desired=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-        ready=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-        if [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]; then
-          local end_time
-          end_time=$(date +%s)
-          echo $((end_time - start_time))
-          return 0
-        fi
-      fi
+    if [ "${ready_status}" = "True" ] && deployment_available; then
+      elapsed_since "${start_time}"
+      return 0
     fi
-    sleep 2
-    elapsed=$(($(date +%s) - start_time))
+    sleep "${POLL_INTERVAL}"
   done
+
   kubectl get kustomization flux-nginx-app -n flux-system -o yaml >&2 || true
   kubectl get gitrepository local-repo -n flux-system -o yaml >&2 || true
-  fail "Flux kustomization/deployment not Ready within ${TIMEOUT}s"
+  kubectl get deploy,svc,pods -n "${NAMESPACE}" >&2 || true
+  fail "Flux cold-start Kustomization/deployment not Ready within ${TIMEOUT}s"
   return 1
 }
 
@@ -126,13 +236,25 @@ measure_self_heal() {
   fi
 
   kubectl scale deployment "${APP_NAME}" --replicas=0 -n "${NAMESPACE}" >/dev/null
-  # Brief pause so the drift is observable before controllers reconcile
-  sleep 3
+  # Wait until drift is visible (replicas scaled down) before starting the timer
+  local drift_deadline=$(( $(date +%s) + 30 ))
+  while true; do
+    local cur
+    cur=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+    if [ "${cur}" = "0" ]; then
+      break
+    fi
+    if [ "$(date +%s)" -ge "${drift_deadline}" ]; then
+      fail "failed to observe replica drift to 0 before self-heal timing"
+      return 1
+    fi
+    sleep 0.2
+  done
 
-  local start_time elapsed=0
-  start_time=$(date +%s)
+  local start_time
+  start_time=$(now)
 
-  while [ "${elapsed}" -lt "${TIMEOUT}" ]; do
+  while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
     local current_replicas ready_replicas
     current_replicas=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
     ready_replicas=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
@@ -140,14 +262,10 @@ measure_self_heal() {
     ready_replicas=${ready_replicas:-0}
 
     if [ "${current_replicas}" = "${original_replicas}" ] && [ "${ready_replicas}" = "${original_replicas}" ]; then
-      local end_time
-      end_time=$(date +%s)
-      echo $((end_time - start_time))
+      elapsed_since "${start_time}"
       return 0
     fi
-
-    sleep 2
-    elapsed=$(($(date +%s) - start_time))
+    sleep "${POLL_INTERVAL}"
   done
 
   fail "self-heal did not restore replicas=${original_replicas} within ${TIMEOUT}s"
@@ -158,45 +276,30 @@ measure_rollback() {
   log "Measuring rollback time after deployment deletion..."
   require_deployment
 
-  kubectl delete deployment "${APP_NAME}" -n "${NAMESPACE}" --wait=true --timeout=60s >/dev/null
+  kubectl delete deployment "${APP_NAME}" -n "${NAMESPACE}" --wait=true --timeout=90s >/dev/null
 
-  local start_time elapsed=0
-  start_time=$(date +%s)
+  if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    fail "deployment/${APP_NAME} still present immediately after delete"
+    return 1
+  fi
 
-  while [ "${elapsed}" -lt "${TIMEOUT}" ]; do
-    if kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-      local desired ready
-      desired=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-      ready=$(kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-      desired=${desired:-0}
-      ready=${ready:-0}
-      if [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]; then
-        local end_time
-        end_time=$(date +%s)
-        echo $((end_time - start_time))
-        return 0
-      fi
+  local start_time
+  start_time=$(now)
+
+  while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
+    if deployment_available; then
+      elapsed_since "${start_time}"
+      return 0
     fi
-
-    sleep 2
-    elapsed=$(($(date +%s) - start_time))
+    sleep "${POLL_INTERVAL}"
   done
 
   fail "rollback did not recreate deployment/${APP_NAME} within ${TIMEOUT}s"
   return 1
 }
 
-# Validate numeric result
-assert_numeric() {
-  local label=$1 value=$2
-  if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
-    fail "${label} produced non-numeric result: '${value}'"
-    return 1
-  fi
-}
-
 time_to_ready=$(measure_time_to_ready)
-assert_numeric "time_to_ready" "${time_to_ready}"
+assert_ready_credible "${time_to_ready}"
 
 time_to_heal=$(measure_self_heal)
 assert_numeric "time_to_heal" "${time_to_heal}"

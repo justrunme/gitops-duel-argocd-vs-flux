@@ -71,10 +71,16 @@ jobs:
           import json, re, sys
           data = json.load(open("docs/results.json"))
           ok = True
+          num = re.compile(r"\d+(?:\.\d+)?")
           for tool, m in data.get("metrics", {}).items():
               for k, v in m.items():
-                  if not re.fullmatch(r"\d+", str(v).strip()):
+                  s = str(v).strip()
+                  if not num.fullmatch(s):
                       print(f"INVALID {tool}.{k}={v!r}", file=sys.stderr)
+                      ok = False
+                      continue
+                  if k == "time_to_ready_seconds" and float(s) <= 0:
+                      print(f"INVALID {tool}.{k}={v!r} (must be > 0 for cold-start)", file=sys.stderr)
                       ok = False
           sys.exit(0 if ok else 1)
           PY
