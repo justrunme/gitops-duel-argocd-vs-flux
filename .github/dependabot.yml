@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github_actions:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
+    directory: "/ui-backend"
+    schedule:
+      interval: "monthly"
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
+    directory: "/ui-frontend"
+    schedule:
+      interval: "monthly"
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: "terraform"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      terraform:
+        patterns: ["*"]
