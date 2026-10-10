@@ -8,6 +8,13 @@ on:
 jobs:
   gitops-duel-ci:
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_git_repository_url: https://github.com/justrunme/gitops-duel-argocd-vs-flux.git
+      TF_VAR_git_branch: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      TF_VAR_argocd_target_namespace: argocd-demo
+      TF_VAR_flux_target_namespace: flux-demo
+      ARGO_TARGET_NAMESPACE: argocd-demo
+      FLUX_TARGET_NAMESPACE: flux-demo
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,6 +28,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+          terraform_wrapper: false
 
       - name: Install Flux CLI
         run: |
@@ -33,6 +41,10 @@ jobs:
           chmod +x argocd
           sudo mv argocd /usr/local/bin/
 
+      - name: Show GitOps source revision
+        run: |
+          echo "Tracking repo=${TF_VAR_git_repository_url} branch=${TF_VAR_git_branch}"
+
       - name: Terraform Init
         working-directory: .
         run: terraform init
@@ -42,8 +54,9 @@ jobs:
         run: |
           terraform apply -target=module.argocd.kubernetes_namespace.argocd -auto-approve
           terraform apply -target=module.argocd.helm_release.argocd -auto-approve
-          echo "⏳ Waiting for ArgoCD CRDs to be ready..."
-          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+          echo "Waiting for ArgoCD CRDs to be ready..."
+          kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=120s
+          terraform apply -target=module.argocd.kubernetes_namespace.target -auto-approve
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_nginx_app -auto-approve
           terraform apply -target=module.argocd.kubernetes_manifest.argocd_helm_nginx_app -auto-approve
           terraform apply -auto-approve
@@ -65,49 +78,37 @@ jobs:
         id: benchmark
         run: |
           mkdir -p docs
-          
-          echo "# GitOps Performance Benchmarks" > docs/results.md
-          echo "" >> docs/results.md
-          echo "Automated performance comparison between Argo CD and Flux." >> docs/results.md
-          echo "" >> docs/results.md
-          echo "## Metrics" >> docs/results.md
-          echo "" >> docs/results.md
-          echo "| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) |" >> docs/results.md
-          echo "|------|-------------------|----------------------|---------------------|" >> docs/results.md
-          
-          echo "Running Argo CD benchmarks..."
-          argocd_out=$(mktemp)
-          .github/scripts/benchmark-gitops.sh default nginx-app argocd | tee "$argocd_out"
-          argocd_results=$(tail -1 "$argocd_out")
-          argocd_ready=$(echo $argocd_results | cut -d',' -f1)
-          argocd_heal=$(echo $argocd_results | cut -d',' -f2)
-          argocd_rollback=$(echo $argocd_results | cut -d',' -f3)
-          
-          echo "| Argo CD | ${argocd_ready} | ${argocd_heal} | ${argocd_rollback} |" >> docs/results.md
-          
-          terraform apply -auto-approve
-          sleep 30
-          
-          echo "Running Flux benchmarks..."
-          flux_out=$(mktemp)
-          .github/scripts/benchmark-gitops.sh default nginx-app flux | tee "$flux_out"
-          flux_results=$(tail -1 "$flux_out")
-          flux_ready=$(echo $flux_results | cut -d',' -f1)
-          flux_heal=$(echo $flux_results | cut -d',' -f2)
-          flux_rollback=$(echo $flux_results | cut -d',' -f3)
-          
-          echo "| Flux | ${flux_ready} | ${flux_heal} | ${flux_rollback} |" >> docs/results.md
-          echo "" >> docs/results.md
-          echo "Run date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> docs/results.md
-          
-          cat docs/results.md >> $GITHUB_STEP_SUMMARY
-          
-          echo "argocd_ready=${argocd_ready}" >> $GITHUB_OUTPUT
-          echo "argocd_heal=${argocd_heal}" >> $GITHUB_OUTPUT
-          echo "argocd_rollback=${argocd_rollback}" >> $GITHUB_OUTPUT
-          echo "flux_ready=${flux_ready}" >> $GITHUB_OUTPUT
-          echo "flux_heal=${flux_heal}" >> $GITHUB_OUTPUT
-          echo "flux_rollback=${flux_rollback}" >> $GITHUB_OUTPUT
+          chmod +x .github/scripts/benchmark-gitops.sh .github/scripts/run-benchmark-demo.sh
+          bash .github/scripts/run-benchmark-demo.sh
+          python3 .github/scripts/write_demo_results.py
+          cat docs/results.md >> "$GITHUB_STEP_SUMMARY"
+
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open("docs/results.json"))
+          mapping = {
+              "Argo CD": ("argocd_ready", "argocd_heal", "argocd_rollback"),
+              "Flux": ("flux_ready", "flux_heal", "flux_rollback"),
+          }
+          outs = []
+          for tool, keys in mapping.items():
+              m = data["metrics"][tool]
+              vals = [
+                  m["time_to_ready_seconds"],
+                  m["time_to_self_heal_seconds"],
+                  m["time_to_rollback_seconds"],
+              ]
+              for k, v in zip(keys, vals):
+                  v = str(v).strip()
+                  if not re.fullmatch(r"\d+", v):
+                      print(f"Non-numeric benchmark value: {tool} {k}={v!r}", file=sys.stderr)
+                      sys.exit(1)
+                  outs.append(f"{k}={v}")
+          Path = __import__("pathlib").Path
+          Path("/tmp/bench_out.env").write_text("\n".join(outs) + "\n")
+          print("\n".join(outs))
+          PY
+          cat /tmp/bench_out.env >> "$GITHUB_OUTPUT"
 
       - name: Build UI images for KinD
         run: |
@@ -120,28 +121,55 @@ jobs:
         run: kubectl apply -f kubernetes/ui/
 
       - name: Debug ArgoCD deployed apps
+        if: always()
         run: |
-          echo "List all deployments in default:"
-          kubectl get deployments -n default
-          echo "List all ArgoCD applications:"
-          kubectl get applications -A
+          echo "Deployments in argocd-demo:"
+          kubectl get deployments -n argocd-demo || true
+          echo "Deployments in flux-demo:"
+          kubectl get deployments -n flux-demo || true
+          echo "Argo CD applications:"
+          kubectl get applications -A || true
+          echo "Flux kustomizations:"
+          kubectl get kustomizations -A || true
 
       - name: Simulate ArgoCD Deployment Issues
         run: |
-          kubectl get deployment nginx-app -n default && kubectl delete deployment nginx-app -n default || echo "nginx-app not found for ArgoCD test"
-          sleep 30
-          kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "ArgoCD recovery test completed"
+          kubectl get deployment nginx-app -n argocd-demo
+          kubectl delete deployment nginx-app -n argocd-demo --wait=true --timeout=60s
+          # kubectl wait fails if the object is missing; poll until Argo recreates it
+          for i in $(seq 1 60); do
+            if kubectl get deployment nginx-app -n argocd-demo >/dev/null 2>&1; then
+              if kubectl wait --for=condition=available deployment/nginx-app -n argocd-demo --timeout=30s; then
+                echo "Argo CD restored deployment"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Argo CD did not restore deployment in time"
+          kubectl get application nginx-app -n argocd -o yaml || true
+          exit 1
 
-      - name: Simulate Flux Deployment Issues  
+      - name: Simulate Flux Deployment Issues
         run: |
-          kubectl get deployment nginx-app -n default && kubectl scale deployment nginx-app --replicas=0 -n default || echo "nginx-app not found for Flux test"
-          sleep 30
-          kubectl wait --for=condition=available deployment/nginx-app -n default --timeout=300s || echo "Flux recovery test completed"
+          kubectl get deployment nginx-app -n flux-demo
+          kubectl scale deployment nginx-app --replicas=0 -n flux-demo
+          for i in $(seq 1 60); do
+            cur=$(kubectl get deployment nginx-app -n flux-demo -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
+            ready=$(kubectl get deployment nginx-app -n flux-demo -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+            if [ "$cur" = "1" ] && [ "$ready" = "1" ]; then
+              echo "Flux restored deployment"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Flux did not restore deployment in time"
+          kubectl get kustomization flux-nginx-app -n flux-system -o yaml || true
+          exit 1
 
       - name: Get Access Information
         id: access_info
         run: |
-          # Получение паролей с проверкой существования секретов
           if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
             ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
             echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"

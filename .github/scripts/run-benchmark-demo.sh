@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p docs
+
+ARGO_NS=${ARGO_TARGET_NAMESPACE:-argocd-demo}
+FLUX_NS=${FLUX_TARGET_NAMESPACE:-flux-demo}
+
 {
   echo "# GitOps Performance Benchmarks"
   echo ""
@@ -12,21 +16,23 @@ mkdir -p docs
   echo "|------|-------------------|----------------------|---------------------|"
 } > docs/results.md
 
-echo "Running Argo CD benchmarks..."
-argocd_out=$(mktemp)
-.github/scripts/benchmark-gitops.sh default nginx-app argocd | tee "$argocd_out"
-argocd_results=$(tail -1 "$argocd_out")
-IFS=',' read -r argocd_ready argocd_heal argocd_rollback <<<"$argocd_results"
+echo "Running Argo CD benchmarks..." >&2
+argocd_results=$(.github/scripts/benchmark-gitops.sh "${ARGO_NS}" nginx-app argocd)
+IFS=',' read -r argocd_ready argocd_heal argocd_rollback <<<"${argocd_results}"
+
+# Reject non-numeric / masked failures
+for v in "${argocd_ready}" "${argocd_heal}" "${argocd_rollback}"; do
+  [[ "${v}" =~ ^[0-9]+$ ]] || { echo "Argo CD benchmark failed: ${argocd_results}" >&2; exit 1; }
+done
 echo "| Argo CD | ${argocd_ready} | ${argocd_heal} | ${argocd_rollback} |" >> docs/results.md
 
-terraform apply -auto-approve
-sleep 30
+echo "Running Flux benchmarks..." >&2
+flux_results=$(.github/scripts/benchmark-gitops.sh "${FLUX_NS}" nginx-app flux)
+IFS=',' read -r flux_ready flux_heal flux_rollback <<<"${flux_results}"
 
-echo "Running Flux benchmarks..."
-flux_out=$(mktemp)
-.github/scripts/benchmark-gitops.sh default nginx-app flux | tee "$flux_out"
-flux_results=$(tail -1 "$flux_out")
-IFS=',' read -r flux_ready flux_heal flux_rollback <<<"$flux_results"
+for v in "${flux_ready}" "${flux_heal}" "${flux_rollback}"; do
+  [[ "${v}" =~ ^[0-9]+$ ]] || { echo "Flux benchmark failed: ${flux_results}" >&2; exit 1; }
+done
 echo "| Flux | ${flux_ready} | ${flux_heal} | ${flux_rollback} |" >> docs/results.md
 echo "" >> docs/results.md
 echo "Run date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> docs/results.md

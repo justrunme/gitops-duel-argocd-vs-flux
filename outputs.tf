@@ -30,7 +30,7 @@ output "access_instructions" {
        flux get all -A
     
     3. UI Dashboard (if deployed):
-       kubectl port-forward service/ui-frontend 8082:80 -n ${var.target_namespace}
+       kubectl port-forward service/ui-frontend 8082:80 -n default
        Then open: http://localhost:8082
     
     4. Monitor applications:
