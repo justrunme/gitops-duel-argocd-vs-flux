@@ -76,7 +76,9 @@ jobs:
           echo "|------|-------------------|----------------------|---------------------|" >> docs/results.md
           
           echo "Running Argo CD benchmarks..."
-          argocd_results=$(.github/scripts/benchmark-gitops.sh default nginx-app argocd | tail -1)
+          argocd_out=$(mktemp)
+          .github/scripts/benchmark-gitops.sh default nginx-app argocd | tee "$argocd_out"
+          argocd_results=$(tail -1 "$argocd_out")
           argocd_ready=$(echo $argocd_results | cut -d',' -f1)
           argocd_heal=$(echo $argocd_results | cut -d',' -f2)
           argocd_rollback=$(echo $argocd_results | cut -d',' -f3)
@@ -87,7 +89,9 @@ jobs:
           sleep 30
           
           echo "Running Flux benchmarks..."
-          flux_results=$(.github/scripts/benchmark-gitops.sh default nginx-app flux | tail -1)
+          flux_out=$(mktemp)
+          .github/scripts/benchmark-gitops.sh default nginx-app flux | tee "$flux_out"
+          flux_results=$(tail -1 "$flux_out")
           flux_ready=$(echo $flux_results | cut -d',' -f1)
           flux_heal=$(echo $flux_results | cut -d',' -f2)
           flux_rollback=$(echo $flux_results | cut -d',' -f3)
@@ -162,3 +166,19 @@ jobs:
           echo "   Password: ${ARGOCD_PASSWORD}"
         env:
           ARGOCD_PASSWORD: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}
+
+      - name: Persist benchmark results
+        if: always()
+        run: |
+          python3 .github/scripts/write_demo_results.py || true
+          test -f docs/results.md && cat docs/results.md || true
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitops-benchmark-results
+          path: |
+            docs/results.md
+            docs/results.json
+          if-no-files-found: warn
