@@ -53,8 +53,17 @@ resource "helm_release" "argocd" {
 
   values = [
     yamlencode({
+      global = {
+        domain = "argocd.local"
+      }
       crds = {
         install = true
+        keep = true
+      }
+      configs = {
+        params = {
+          "server.insecure" = true
+        }
       }
     })
   ]
