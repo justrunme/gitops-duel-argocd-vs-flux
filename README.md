@@ -291,11 +291,9 @@ KinD CI runs Argo CD vs Flux benchmarks (time-to-ready / self-heal / rollback). 
 bash .github/scripts/run-benchmark-demo.sh
 ```
 
-<!-- demo asset filled after first successful demo-results artifact download:
 <p align="center">
   <img src="docs/assets/gitops-duel.svg" alt="GitOps duel benchmark terminal: Argo CD vs Flux timings" width="100%" />
 </p>
--->
 
 Full comparison notes: [docs/results.md](docs/results.md)
 
@@ -303,12 +301,12 @@ Full comparison notes: [docs/results.md](docs/results.md)
 
 Measured in CI (not estimates). Table values are taken from the latest uploaded `docs/results.json` artifact and linked to that Actions run.
 
-| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) | Source |
-|------|-------------------:|----------------------:|---------------------:|--------|
-| Argo CD | _pending CI artifact_ | _pending_ | _pending_ | see `demo-results` / `test-kind` |
-| Flux | _pending CI artifact_ | _pending_ | _pending_ | same |
+| Tool | Time to Ready | Time to Self-Heal | Time to Rollback | Source |
+|------|---------------|-------------------|------------------|--------|
+| Argo CD | timeout (300s) | 0 (deployment not found) | 0 (deployment not found) | [38084720453](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38084720453) |
+| Flux | 0 (deployment not found) | 0 (deployment not found) | 0 (deployment not found) | same |
 
-Once the `demo-results` workflow completes on this branch, numbers and `docs/assets/gitops-duel.svg` are committed from the artifact.
+Values are copied from the CI artifact (not estimates). Details: [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
 
 
 ## 📸 Screenshots
