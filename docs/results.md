@@ -2,30 +2,34 @@
 
 Automated performance comparison between Argo CD and Flux.
 
-Source run: [`38090813003`](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38090813003) (Demo results), 2026-10-10.
+Samples per metric: **3** (reported as median with min/max).
 
-> Numbers below are from the last published CI artifact. They will be replaced only with values from a green CI run on this branch (N=3 median/min/max, `equal-10s` + `defaults` profiles, including commit→ready). No estimated timings are published.
+Profiles:
 
-## Latest measured results
+| Profile | Argo CD `timeout.reconciliation` | Flux GitRepository/Kustomization `interval` |
+|---------|-----------------------------------|-----------------------------------------------|
+| `equal-10s` | 10s | 10s |
+| `defaults` | 180s (Argo stock) | 1m (CI-bounded stand-in; stock Flux Kustomization default is 10m) |
 
-| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Rollback (s) |
-|------|-------------------|----------------------|---------------------|
-| Argo CD | 4.695 | 3.156 | 4.621 |
-| Flux | 6.803 | 13.326 | 69.040 |
+Commit→ready pushes an image-tag change to a temporary `ci/bench-<run-id>` GitHub branch and times convergence (polling only; no webhooks). The branch is deleted in an `if: always()` cleanup step.
 
-Run date: 2026-10-10 22:21:02 UTC
+Deletion recovery recreates a deleted Deployment (not a Git revert).
 
-These values are taken verbatim from the CI artifact / job logs. No estimated timings are published.
+## Profile `equal-10s`
 
-## How metrics are measured
+| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Deletion Recovery (s) | Time to Commit→Ready (s) |
+|------|-------------------|----------------------|-------------------------------|--------------------------|
+| Argo CD | 3.759 (min 3.161, max 4.366, n=3) | 3.666 (min 3.623, max 3.671, n=3) | 3.130 (min 3.116, max 3.146, n=3) | 19.068 (min 15.300, max 36.912, n=3) |
+| Flux | 6.167 (min 6.136, max 6.187, n=3) | 12.767 (min 11.716, max 13.357, n=3) | 70.208 (min 69.905, max 70.444, n=3) | 8.289 (min 4.006, max 8.843, n=3) |
 
-- **Profiles**
-  - `equal-10s`: Argo CD `timeout.reconciliation=10s`, Flux GitRepository/Kustomization `interval=10s`
-  - `defaults`: Argo CD `timeout.reconciliation=180s` (stock), Flux `interval=1m` (CI-bounded stand-in; stock Flux Kustomization default is 10m)
-- **Samples**: N=3 per metric; published as median with min/max
-- **Time to Ready**: delete the Argo CD Application / Flux Kustomization and wipe the target workload, then start the timer at recreate and stop when the Deployment is Available and the app reports Synced+Healthy / Ready=True
-- **Time to Self-Heal**: recover after scaling replicas to 0
-- **Time to Deletion Recovery** (table header may still say Rollback in older artifacts): recover after deployment deletion (not a Git revert)
-- **Time to Commit→Ready**: push an image-tag change to a temporary `ci/bench-<run-id>` GitHub branch and time until the live Deployment image converges (polling only; no webhooks). The branch is deleted in an `if: always()` cleanup step.
+## Profile `defaults`
 
-Re-run: Actions → **Demo results** or **GitOps Duel CI**.
+| Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Deletion Recovery (s) | Time to Commit→Ready (s) |
+|------|-------------------|----------------------|-------------------------------|--------------------------|
+| Argo CD | 3.768 (min 3.729, max 3.843, n=3) | 3.623 (min 3.603, max 3.635, n=3) | 3.170 (min 3.153, max 3.767, n=3) | 312.054 (min 206.794, max 344.024, n=3) |
+| Flux | 6.130 (min 6.127, max 6.166, n=3) | 65.157 (min 64.444, max 66.093, n=3) | 119.997 (min 119.985, max 120.506, n=3) | 54.182 (min 53.135, max 57.425, n=3) |
+
+Run date: 2026-10-11 11:00:03 UTC
+Source run: https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035
+
+These values are taken verbatim from the CI job. No estimated timings are published.

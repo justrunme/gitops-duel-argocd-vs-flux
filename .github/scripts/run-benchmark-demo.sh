@@ -114,12 +114,16 @@ for profile in "${PROFILE_ARR[@]}"; do
     echo "Applying profile ${p}: Argo reconciliation=${recon}, Flux interval=${flux_interval}" >&2
     kubectl -n argocd patch configmap argocd-cm --type merge \
       -p "{\"data\":{\"timeout.reconciliation\":\"${recon}\"}}" >/dev/null
-    kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null 2>&1 \
-      || kubectl -n argocd rollout restart deployment/argocd-application-controller >/dev/null 2>&1 \
-      || true
-    kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
-      || kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
-      || true
+    if kubectl -n argocd get statefulset argocd-application-controller >/dev/null 2>&1; then
+      kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null
+      kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s >/dev/null
+    elif kubectl -n argocd get deployment argocd-application-controller >/dev/null 2>&1; then
+      kubectl -n argocd rollout restart deployment/argocd-application-controller >/dev/null
+      kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=180s >/dev/null
+    else
+      echo "argocd-application-controller (statefulset/deployment) not found" >&2
+      return 1
+    fi
     if kubectl get gitrepository local-repo -n flux-system >/dev/null 2>&1; then
       url=$(kubectl get gitrepository local-repo -n flux-system -o jsonpath='{.spec.url}')
       branch=$(kubectl get gitrepository local-repo -n flux-system -o jsonpath='{.spec.ref.branch}')

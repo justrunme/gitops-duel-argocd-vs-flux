@@ -111,13 +111,16 @@ apply_argocd_reconciliation() {
     | kubectl apply -f - >/dev/null
   kubectl -n argocd patch configmap argocd-cm --type merge \
     -p "{\"data\":{\"timeout.reconciliation\":\"${recon}\"}}" >/dev/null
-  # Restart application controller so the setting is picked up
-  kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null 2>&1 \
-    || kubectl -n argocd rollout restart deployment/argocd-application-controller >/dev/null 2>&1 \
-    || true
-  kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
-    || kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
-    || true
+  # Restart application controller so the setting is picked up (must succeed)
+  if kubectl -n argocd get statefulset argocd-application-controller >/dev/null 2>&1; then
+    kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null
+    kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s >/dev/null
+  elif kubectl -n argocd get deployment argocd-application-controller >/dev/null 2>&1; then
+    kubectl -n argocd rollout restart deployment/argocd-application-controller >/dev/null
+    kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=180s >/dev/null
+  else
+    fail "argocd-application-controller (statefulset/deployment) not found"
+  fi
 }
 
 ensure_argocd_http_repo() {

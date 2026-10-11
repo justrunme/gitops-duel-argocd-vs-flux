@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: ui-frontend
-        image: justrunme/gitops-duel-ui-frontend:latest
+        image: justrunme/gitops-duel-ui-frontend:ci-placeholder
         ports:
         - containerPort: 80

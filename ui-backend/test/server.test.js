@@ -7,13 +7,22 @@ const request = require('supertest');
 process.env.NODE_ENV = 'test';
 process.env.RATE_LIMIT_MAX = '1000';
 process.env.CORS_ORIGINS = 'https://ui.example.com';
+process.env.UI_API_TOKEN = 'test-token-secret';
 
 const { createApp } = require('../app');
 
 function mockCustomApi() {
   return {
-    async listClusterCustomObject() {
-      return { items: [] };
+    async listNamespacedCustomObject({ namespace }) {
+      return {
+        items: [
+          {
+            apiVersion: 'argoproj.io/v1alpha1',
+            kind: 'Application',
+            metadata: { name: 'nginx-app', namespace },
+          },
+        ],
+      };
     },
     async getNamespacedCustomObject({ name, namespace }) {
       return {
@@ -37,6 +46,8 @@ describe('HTTP API input hardening', () => {
     });
   });
 
+  const auth = { Authorization: 'Bearer test-token-secret' };
+
   const maliciousNames = [
     'foo;rm -rf /',
     'foo;id',
@@ -50,48 +61,73 @@ describe('HTTP API input hardening', () => {
 
   for (const name of maliciousNames) {
     it(`GET /api/argocd/application/:name rejects ${JSON.stringify(name)}`, async () => {
-      const res = await request(app).get(
-        `/api/argocd/application/${encodeURIComponent(name)}/manifests?namespace=argocd`
-      );
+      const res = await request(app)
+        .get(`/api/argocd/application/${encodeURIComponent(name)}/manifests?namespace=argocd`)
+        .set(auth);
       assert.equal(res.status, 400);
       assert.match(String(res.body.error || ''), /invalid|DNS-1123|allowlist/i);
     });
 
     it(`GET /api/flux/kustomization/:name rejects ${JSON.stringify(name)}`, async () => {
-      const res = await request(app).get(
-        `/api/flux/kustomization/${encodeURIComponent(name)}/manifests?namespace=flux-system`
-      );
+      const res = await request(app)
+        .get(`/api/flux/kustomization/${encodeURIComponent(name)}/manifests?namespace=flux-system`)
+        .set(auth);
       assert.equal(res.status, 400);
       assert.match(String(res.body.error || ''), /invalid|DNS-1123|allowlist/i);
     });
   }
 
+  it('rejects unauthenticated API calls', async () => {
+    const res = await request(app).get('/api/argocd/applications');
+    assert.equal(res.status, 401);
+  });
+
+  it('rejects wrong bearer token', async () => {
+    const res = await request(app)
+      .get('/api/argocd/applications')
+      .set({ Authorization: 'Bearer wrong' });
+    assert.equal(res.status, 401);
+  });
+
+  it('allows /healthz without token', async () => {
+    const res = await request(app).get('/healthz');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'ok');
+  });
+
+  it('lists Argo applications with token via namespaced API', async () => {
+    const res = await request(app).get('/api/argocd/applications').set(auth);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+    assert.equal(res.body[0].metadata.name, 'nginx-app');
+  });
+
   it('rejects malicious namespace query', async () => {
-    const res = await request(app).get(
-      '/api/argocd/application/nginx-app/manifests?namespace=argocd%3B%20rm%20-rf%20%2F'
-    );
+    const res = await request(app)
+      .get('/api/argocd/application/nginx-app/manifests?namespace=argocd%3B%20rm%20-rf%20%2F')
+      .set(auth);
     assert.equal(res.status, 400);
   });
 
   it('rejects path traversal namespace', async () => {
-    const res = await request(app).get(
-      '/api/argocd/application/nginx-app/manifests?namespace=..%2Fkube-system'
-    );
+    const res = await request(app)
+      .get('/api/argocd/application/nginx-app/manifests?namespace=..%2Fkube-system')
+      .set(auth);
     assert.equal(res.status, 400);
   });
 
   it('rejects non-allowlisted namespace', async () => {
-    const res = await request(app).get(
-      '/api/argocd/application/nginx-app/manifests?namespace=kube-system'
-    );
+    const res = await request(app)
+      .get('/api/argocd/application/nginx-app/manifests?namespace=kube-system')
+      .set(auth);
     assert.equal(res.status, 400);
     assert.match(res.body.error, /allowlist/i);
   });
 
   it('accepts valid Argo application name', async () => {
-    const res = await request(app).get(
-      '/api/argocd/application/nginx-app/manifests?namespace=argocd'
-    );
+    const res = await request(app)
+      .get('/api/argocd/application/nginx-app/manifests?namespace=argocd')
+      .set(auth);
     assert.equal(res.status, 200);
     assert.match(res.text, /nginx-app/);
   });
@@ -100,7 +136,7 @@ describe('HTTP API input hardening', () => {
     const res = await request(app).get('/api/git/manifests').query({
       repoUrl: 'https://github.com/justrunme/gitops-duel-argocd-vs-flux.git; rm -rf /',
       appPath: 'apps/argocd/nginx',
-    });
+    }).set(auth);
     assert.equal(res.status, 400);
   });
 
@@ -108,7 +144,7 @@ describe('HTTP API input hardening', () => {
     const res = await request(app).get('/api/git/manifests').query({
       repoUrl: 'https://github.com/justrunme/$(whoami)/x.git',
       appPath: 'apps/argocd/nginx',
-    });
+    }).set(auth);
     assert.equal(res.status, 400);
   });
 
@@ -116,7 +152,7 @@ describe('HTTP API input hardening', () => {
     const res = await request(app).get('/api/git/manifests').query({
       repoUrl: 'https://github.com/justrunme/gitops-duel-argocd-vs-flux.git',
       appPath: 'apps/argocd/../../../etc/passwd',
-    });
+    }).set(auth);
     assert.equal(res.status, 400);
     assert.match(res.body.error, /traversal|allowlist|forbidden/i);
   });
@@ -125,7 +161,7 @@ describe('HTTP API input hardening', () => {
     const res = await request(app).get('/api/git/manifests').query({
       repoUrl: 'https://github.com/justrunme/gitops-duel-argocd-vs-flux.git',
       appPath: 'secrets/prod',
-    });
+    }).set(auth);
     assert.equal(res.status, 400);
   });
 
@@ -133,7 +169,7 @@ describe('HTTP API input hardening', () => {
     const res = await request(app).get('/api/git/manifests').query({
       repoUrl: 'https://github.com/justrunme/gitops-duel-argocd-vs-flux.git',
       appPath: 'apps/argocd/nginx',
-    });
+    }).set(auth);
     assert.equal(res.status, 200);
     assert.ok(res.body['deployment.yaml']);
   });
