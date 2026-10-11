@@ -29,14 +29,38 @@ function apiToken() {
   return String(t);
 }
 
+function authDisabled() {
+  return String(process.env.AUTH_DISABLED || '').toLowerCase() === 'true';
+}
+
+/**
+ * Fail process startup when the API token is missing, unless AUTH_DISABLED=true
+ * is set explicitly for local development (logs a loud warning).
+ */
+function assertAuthConfigured() {
+  if (authDisabled()) {
+    console.warn('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    console.warn('WARNING: AUTH_DISABLED=true — /api/* authentication is OFF.');
+    console.warn('This escape hatch is for local development only.');
+    console.warn('Never enable AUTH_DISABLED in shared or production clusters.');
+    console.warn('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    return;
+  }
+  if (!apiToken()) {
+    throw new Error(
+      'UI_API_TOKEN is required for /api/* (set AUTH_DISABLED=true only for local development)'
+    );
+  }
+}
+
 function requireApiAuth(req, res, next) {
+  if (authDisabled()) {
+    return next();
+  }
   const expected = apiToken();
   if (!expected) {
-    // Misconfiguration in production: refuse rather than open the API
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(503).json({ error: 'API token not configured' });
-    }
-    return next();
+    // Defense in depth: refuse rather than open the API (startup should have failed).
+    return res.status(503).json({ error: 'API token not configured' });
   }
   const hdr = req.headers.authorization || '';
   const m = hdr.match(/^Bearer\s+(.+)$/i);
@@ -190,4 +214,11 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, parseCorsOrigins, requireApiAuth, apiToken };
+module.exports = {
+  createApp,
+  parseCorsOrigins,
+  requireApiAuth,
+  apiToken,
+  authDisabled,
+  assertAuthConfigured,
+};
