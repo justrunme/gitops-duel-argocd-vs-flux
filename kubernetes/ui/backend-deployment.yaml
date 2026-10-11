@@ -16,7 +16,7 @@ spec:
       serviceAccountName: ui-backend
       containers:
       - name: ui-backend
-        image: justrunme/gitops-duel-ui-backend:latest
+        image: justrunme/gitops-duel-ui-backend:ci-placeholder
         ports:
         - containerPort: 3001
         env:
@@ -28,6 +28,11 @@ spec:
           value: "argocd,flux-system,argocd-demo,flux-demo,default"
         - name: RATE_LIMIT_MAX
           value: "60"
+        - name: UI_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ui-backend-api-token
+              key: token
         readinessProbe:
           httpGet:
             path: /healthz

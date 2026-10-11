@@ -8,6 +8,8 @@ on:
 jobs:
   ui-backend-unit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ui-backend
@@ -28,7 +30,7 @@ jobs:
           NODE_ENV: test
       - name: Guard against shell exec in request path
         run: |
-          if grep -R --include='*.js' -nE "child_process|\\bexec\\(|execSync|execFile" app.js server.js lib/; then
+          if grep -R --include='*.js' -nE "child_process|[^.]exec\(|execSync|execFile" app.js server.js lib/; then
             echo "shell/child_process usage is forbidden in ui-backend request path" >&2
             exit 1
           fi
@@ -37,6 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: ui-backend-unit
     permissions:
+      # write required for temporary ci/bench-* branches (commit→ready). Unit job stays read-only.
       contents: write
       actions: read
       checks: read
@@ -176,14 +179,80 @@ jobs:
           cat /tmp/bench_out.env >> "$GITHUB_OUTPUT"
 
       - name: Build UI images for KinD
+        id: ui_images
         run: |
-          docker build -t justrunme/gitops-duel-ui-backend:latest ./ui-backend
-          docker build -t justrunme/gitops-duel-ui-frontend:latest ./ui-frontend
-          kind load docker-image justrunme/gitops-duel-ui-backend:latest --name kind
-          kind load docker-image justrunme/gitops-duel-ui-frontend:latest --name kind
+          TAG="ci-${GITHUB_SHA::12}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          docker build -t "justrunme/gitops-duel-ui-backend:${TAG}" ./ui-backend
+          docker build -t "justrunme/gitops-duel-ui-frontend:${TAG}" ./ui-frontend
+          kind load docker-image "justrunme/gitops-duel-ui-backend:${TAG}" --name kind
+          kind load docker-image "justrunme/gitops-duel-ui-frontend:${TAG}" --name kind
 
       - name: Deploy UI
-        run: kubectl apply -f kubernetes/ui/
+        env:
+          UI_IMAGE_TAG: ${{ steps.ui_images.outputs.tag }}
+        run: |
+          # Pin image tags (never :latest)
+          sed -i "s|justrunme/gitops-duel-ui-backend:ci-placeholder|justrunme/gitops-duel-ui-backend:${UI_IMAGE_TAG}|g" kubernetes/ui/backend-deployment.yaml
+          sed -i "s|justrunme/gitops-duel-ui-frontend:ci-placeholder|justrunme/gitops-duel-ui-frontend:${UI_IMAGE_TAG}|g" kubernetes/ui/frontend-deployment.yaml
+          UI_API_TOKEN=$(openssl rand -hex 24)
+          echo "::add-mask::${UI_API_TOKEN}"
+          printf '%s' "${UI_API_TOKEN}" > /tmp/ui_api_token
+          # Ensure demo namespaces exist before namespaced RoleBindings
+          kubectl create namespace argocd-demo --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace flux-demo --dry-run=client -o yaml | kubectl apply -f -
+          # Bearer token Secret before Deployment (envFrom secretKeyRef)
+          kubectl create secret generic ui-backend-api-token \
+            --from-file=token=/tmp/ui_api_token \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f kubernetes/ui/backend-rbac.yaml
+          kubectl apply -f kubernetes/ui/backend-deployment.yaml
+          kubectl apply -f kubernetes/ui/backend-service.yaml
+          kubectl apply -f kubernetes/ui/frontend-deployment.yaml
+          kubectl apply -f kubernetes/ui/frontend-service.yaml
+          kubectl apply -f kubernetes/ui/ingress.yaml
+          kubectl -n default rollout status deployment/ui-backend --timeout=180s
+          kubectl -n default rollout status deployment/ui-frontend --timeout=180s
+
+      - name: E2E UI backend health and auth
+        run: |
+          set -euo pipefail
+          UI_API_TOKEN=$(cat /tmp/ui_api_token)
+          kubectl -n default port-forward svc/ui-backend 3001:3001 >/tmp/ui-pf.log 2>&1 &
+          PF_PID=$!
+          cleanup() { kill "${PF_PID}" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ok=0
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:3001/healthz >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "${ok}" != "1" ]; then
+            echo "port-forward/healthz never became ready" >&2
+            cat /tmp/ui-pf.log >&2 || true
+            kubectl -n default get pods,svc -l app=ui-backend -o wide >&2 || true
+            kubectl -n default logs deploy/ui-backend --tail=80 >&2 || true
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/healthz.json -w '%{http_code}' http://127.0.0.1:3001/healthz)
+          echo "healthz code=${code} body=$(cat /tmp/healthz.json)"
+          test "${code}" = "200"
+          grep -q '"status"' /tmp/healthz.json
+          code=$(curl -s -o /tmp/api_unauth.json -w '%{http_code}' http://127.0.0.1:3001/api/argocd/applications)
+          echo "unauth code=${code} body=$(cat /tmp/api_unauth.json)"
+          test "${code}" = "401"
+          code=$(curl -s -o /tmp/api_auth.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${UI_API_TOKEN}" \
+            http://127.0.0.1:3001/api/argocd/applications)
+          echo "auth code=${code} body=$(cat /tmp/api_auth.json)"
+          if [ "${code}" != "200" ]; then
+            kubectl -n default logs deploy/ui-backend --tail=80 >&2 || true
+            exit 1
+          fi
+          echo "E2E UI backend checks passed"
 
       - name: Debug ArgoCD deployed apps
         if: always()
@@ -237,10 +306,13 @@ jobs:
         run: |
           if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
             ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-            echo "ARGOCD_PASSWORD=${ARGOCD_PASSWORD}" >> "$GITHUB_OUTPUT"
+            echo "::add-mask::${ARGOCD_PASSWORD}"
+            printf '%s' "${ARGOCD_PASSWORD}" > /tmp/argocd_admin_password
           else
-            echo "ARGOCD_PASSWORD=admin" >> "$GITHUB_OUTPUT"
+            echo "::add-mask::admin"
+            printf '%s' "admin" > /tmp/argocd_admin_password
           fi
+          echo "Argo CD admin password written to /tmp/argocd_admin_password (masked; not echoed)"
 
       - name: Output Access Information
         run: |
@@ -256,15 +328,14 @@ jobs:
           echo "1. Run 'kubectl port-forward svc/argocd-server -n argocd 8080:80'"
           echo "2. Open http://localhost:8080"
           echo "3. Login with username: admin"
-          echo "   Password: ${ARGOCD_PASSWORD}"
-        env:
-          ARGOCD_PASSWORD: ${{ steps.access_info.outputs.ARGOCD_PASSWORD }}
+          echo "   Password: (see /tmp/argocd_admin_password on the runner; value is masked)"
 
       - name: Persist benchmark results
         if: always()
         run: |
-          python3 .github/scripts/write_demo_results.py || true
-          test -f docs/results.md && cat docs/results.md || true
+          python3 .github/scripts/write_demo_results.py
+          test -f docs/results.md
+          cat docs/results.md
 
       - name: Upload benchmark results
         if: always()
@@ -275,7 +346,7 @@ jobs:
             docs/results.md
             docs/results.json
             docs/bench-raw/**
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Cleanup temporary bench branches
         if: always()

@@ -2,6 +2,7 @@
 
 const k8s = require('@kubernetes/client-node');
 const yaml = require('js-yaml');
+const { allowedNamespaces } = require('./validation');
 
 const ARGO_GROUP = 'argoproj.io';
 const ARGO_VERSION = 'v1alpha1';
@@ -18,7 +19,6 @@ function loadKubeConfig() {
       kc.loadFromDefault();
       return kc;
     } catch (err) {
-      // Fall through to empty config for unit tests / local without cluster
       if (process.env.NODE_ENV !== 'test') {
         console.warn(`kubeconfig load warning: ${err.message}`);
       }
@@ -37,25 +37,50 @@ function createClients(kc = loadKubeConfig()) {
   return { kc, custom };
 }
 
-async function listArgoApplications(custom) {
-  const res = await custom.listClusterCustomObject({
+function extractItems(res) {
+  const body = res && res.items !== undefined ? res : res && res.body;
+  return (body && body.items) || [];
+}
+
+async function listNamespaced(custom, { group, version, plural, namespaces }) {
+  const nsList = namespaces || allowedNamespaces();
+  const items = [];
+  for (const namespace of nsList) {
+    try {
+      const res = await custom.listNamespacedCustomObject({
+        group,
+        version,
+        plural,
+        namespace,
+      });
+      items.push(...extractItems(res));
+    } catch (err) {
+      const code = err.statusCode || err.code;
+      // Missing CRD/ns or Role without that resource in this ns — skip
+      if (code === 404 || code === 403) continue;
+      throw err;
+    }
+  }
+  return items;
+}
+
+async function listArgoApplications(custom, namespaces) {
+  return listNamespaced(custom, {
     group: ARGO_GROUP,
     version: ARGO_VERSION,
     plural: ARGO_PLURAL,
+    namespaces,
   });
-  // client-node v1 returns the body directly; older shapes use .body
-  const body = res && res.items !== undefined ? res : res.body;
-  return body.items || [];
 }
 
-async function listFluxKustomizations(custom) {
-  const res = await custom.listClusterCustomObject({
+async function listFluxKustomizations(custom, namespaces) {
+  const items = await listNamespaced(custom, {
     group: FLUX_GROUP,
     version: FLUX_VERSION,
     plural: FLUX_PLURAL,
+    namespaces,
   });
-  const body = res && res.items !== undefined ? res : res.body;
-  return { items: body.items || [] };
+  return { items };
 }
 
 async function getArgoApplication(custom, name, namespace) {
