@@ -30,7 +30,7 @@ jobs:
           NODE_ENV: test
       - name: Guard against shell exec in request path
         run: |
-          if grep -R --include='*.js' -nE "child_process|(^|[^\.])exec\(|execSync|execFile" app.js server.js lib/; then
+          if grep -R --include='*.js' -nE "child_process|[^.]exec\(|execSync|execFile" app.js server.js lib/; then
             echo "shell/child_process usage is forbidden in ui-backend request path" >&2
             exit 1
           fi

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Build docs/results.json from docs/bench-raw/* summaries (preferred) or results.md."""
+"""Build docs/results.json from docs/bench-raw/* summaries (preferred) or results.md.
+
+CI artifact upload fails closed when these files are missing.
+"""
 from __future__ import annotations
 
 import json
