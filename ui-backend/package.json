@@ -4,15 +4,30 @@
   "description": "GitOps Duel UI Backend - Kubernetes API proxy",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/**/*.test.js",
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["kubernetes", "argocd", "flux", "gitops"],
+  "keywords": [
+    "kubernetes",
+    "argocd",
+    "flux",
+    "gitops"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "express": "^5.2.1"
+    "@kubernetes/client-node": "^1.1.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
   }
 }
