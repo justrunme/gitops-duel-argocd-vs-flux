@@ -421,33 +421,29 @@ measure_commit_to_ready() {
     setup_bench_git_server "$(cd "${SCRIPT_DIR}/../.." && pwd)"
   fi
 
-  local target_image=nginx:1.26-alpine
-  local current_image
-  current_image=$(deployment_image)
-  if [ "${current_image}" = "${target_image}" ]; then
+  local manifest_file baseline_image target_image
+  if [ "${GITOPS_TOOL}" = "argocd" ]; then
+    manifest_file="${BENCH_GIT_SRC}/apps/argocd/nginx/deployment.yaml"
+  else
+    manifest_file="${BENCH_GIT_SRC}/apps/flux/nginx/deployment.yaml"
+  fi
+  baseline_image=$(grep -E '^[[:space:]]*image:' "${manifest_file}" | head -n1 | awk '{print $2}')
+  if [ -z "${baseline_image}" ]; then
+    fail "could not read baseline image from ${manifest_file}"
+    return 1
+  fi
+  # Flip relative to the git working copy (not the live cluster) so N>1 samples always commit.
+  if [ "${baseline_image}" = "nginx:1.27-alpine" ]; then
+    target_image=nginx:1.26-alpine
+  else
     target_image=nginx:1.27-alpine
   fi
+  log "commit→ready baseline=${baseline_image} target=${target_image}"
 
-  # Retarget to the temporary HTTPS GitHub branch (no insecure HTTP / local git server)
+  # Retarget to the temporary HTTPS GitHub branch
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
     create_argocd_application "${BENCH_GIT_URL}" "${BENCH_GIT_BRANCH}" >/dev/null
-    local warm_deadline=$(( $(date +%s) + TIMEOUT ))
-    while true; do
-      local sync health
-      sync=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
-      health=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
-      if [ "${sync}" = "Synced" ] && [ "${health}" = "Healthy" ] && deployment_available; then
-        break
-      fi
-      if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
-        kubectl get application "${APP_NAME}" -n argocd -o yaml >&2 || true
-        fail "Argo CD did not sync to bench branch ${BENCH_GIT_BRANCH} before commit timing"
-        return 1
-      fi
-      sleep "${POLL_INTERVAL}"
-    done
   else
-    # Point Flux at the temporary branch while keeping profile interval
     local interval
     interval=$(profile_flux_interval)
     cat <<YAML | kubectl apply -f - >/dev/null
@@ -464,33 +460,51 @@ spec:
     branch: ${BENCH_GIT_BRANCH}
 YAML
     create_flux_kustomization >/dev/null
-    local warm_deadline=$(( $(date +%s) + TIMEOUT ))
-    while true; do
-      local ready_status
-      ready_status=$(kubectl get kustomization flux-nginx-app -n flux-system \
-        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-      if [ "${ready_status}" = "True" ] && deployment_available; then
-        break
-      fi
-      if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
-        kubectl get gitrepository local-repo -n flux-system -o yaml >&2 || true
-        kubectl get kustomization flux-nginx-app -n flux-system -o yaml >&2 || true
-        fail "Flux did not sync to bench branch ${BENCH_GIT_BRANCH} before commit timing"
-        return 1
-      fi
-      sleep "${POLL_INTERVAL}"
-    done
   fi
 
-  if [ "${GITOPS_TOOL}" = "argocd" ]; then
-    sed -i "s|image: nginx:.*|image: ${target_image}|" \
-      "${BENCH_GIT_SRC}/apps/argocd/nginx/deployment.yaml"
-  else
-    sed -i "s|image: nginx:.*|image: ${target_image}|" \
-      "${BENCH_GIT_SRC}/apps/flux/nginx/deployment.yaml"
+  # Warm to the current git baseline before committing the flip
+  local warm_deadline=$(( $(date +%s) + TIMEOUT ))
+  while true; do
+    if [ "$(deployment_image)" = "${baseline_image}" ] && deployment_available; then
+      if [ "${GITOPS_TOOL}" = "argocd" ]; then
+        local sync health
+        sync=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
+        health=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
+        if [ "${sync}" = "Synced" ] && [ "${health}" = "Healthy" ]; then
+          break
+        fi
+      else
+        local ready_status
+        ready_status=$(kubectl get kustomization flux-nginx-app -n flux-system \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+        if [ "${ready_status}" = "True" ]; then
+          break
+        fi
+      fi
+    fi
+    if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
+      log "warm state: image=$(deployment_image) want=${baseline_image}"
+      if [ "${GITOPS_TOOL}" = "argocd" ]; then
+        kubectl get application "${APP_NAME}" -n argocd -o yaml >&2 || true
+      else
+        kubectl get gitrepository local-repo -n flux-system -o yaml >&2 || true
+        kubectl get kustomization flux-nginx-app -n flux-system -o yaml >&2 || true
+      fi
+      fail "did not reach baseline image ${baseline_image} on bench branch before commit timing"
+      return 1
+    fi
+    sleep "${POLL_INTERVAL}"
+  done
+
+  sed -i "s|image: nginx:.*|image: ${target_image}|" "${manifest_file}"
+  if git -C "${BENCH_GIT_SRC}" diff --quiet; then
+    fail "image flip produced no git diff (baseline=${baseline_image} target=${target_image})"
+    return 1
   fi
   bench_git_commit "bench: set image ${target_image}"
 
+  # Start the timer only after the commit is visible on the remote. Controllers
+  # discover it via their configured poll/reconcile intervals (no webhook nudge).
   local start_time
   start_time=$(now)
   while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
@@ -504,6 +518,12 @@ YAML
   done
 
   log "desired image=${target_image} observed=$(deployment_image)"
+  if [ "${GITOPS_TOOL}" = "flux" ]; then
+    kubectl get gitrepository local-repo -n flux-system -o yaml >&2 || true
+    kubectl get kustomization flux-nginx-app -n flux-system -o yaml >&2 || true
+  else
+    kubectl get application "${APP_NAME}" -n argocd -o yaml >&2 || true
+  fi
   fail "commit→ready did not converge to ${target_image} within ${TIMEOUT}s"
   return 1
 }
