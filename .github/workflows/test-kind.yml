@@ -211,8 +211,25 @@ jobs:
           kubectl apply -f kubernetes/ui/frontend-deployment.yaml
           kubectl apply -f kubernetes/ui/frontend-service.yaml
           kubectl apply -f kubernetes/ui/ingress.yaml
-          kubectl -n default rollout status deployment/ui-backend --timeout=180s
-          kubectl -n default rollout status deployment/ui-frontend --timeout=180s
+          if ! kubectl -n default rollout status deployment/ui-backend --timeout=180s; then
+            echo "::error::ui-backend rollout failed"
+            kubectl -n default get pods,deploy,svc -l 'app in (ui-backend,ui-frontend)' -o wide || true
+            kubectl -n default describe deploy/ui-backend || true
+            kubectl -n default describe pods -l app=ui-backend || true
+            kubectl -n default logs deploy/ui-backend --tail=120 || true
+            kubectl -n default logs deploy/ui-frontend --tail=120 || true
+            exit 1
+          fi
+          if ! kubectl -n default rollout status deployment/ui-frontend --timeout=180s; then
+            echo "::error::ui-frontend rollout failed"
+            kubectl -n default get pods,deploy,svc -l 'app in (ui-backend,ui-frontend)' -o wide || true
+            kubectl -n default describe deploy/ui-frontend || true
+            kubectl -n default describe pods -l app=ui-frontend || true
+            kubectl -n default logs deploy/ui-frontend --tail=120 || true
+            kubectl -n default logs deploy/ui-backend --tail=120 || true
+            kubectl -n default get secret ui-backend-api-token -o jsonpath='{.data.token}' | wc -c || true
+            exit 1
+          fi
 
       - name: E2E UI backend health and auth
         run: |

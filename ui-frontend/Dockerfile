@@ -10,7 +10,10 @@ COPY . .
 RUN npm install
 RUN npm run build
 
-# Production stage: nginx proxies /api/* and injects Authorization from Secret
+# Production stage: nginx proxies /api/* and injects Authorization from Secret.
+# Do not set capabilities.drop=["ALL"] on the Pod: nginx master needs CHOWN/SETUID
+# (and NET_BIND_SERVICE for :80) or it exits with
+# chown("/var/cache/nginx/client_temp", 101) failed (Operation not permitted).
 FROM nginx:stable-alpine
 
 RUN apk add --no-cache gettext \

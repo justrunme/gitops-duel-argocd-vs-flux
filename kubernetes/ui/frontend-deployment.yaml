@@ -38,11 +38,6 @@ spec:
             port: 80
           initialDelaySeconds: 5
           periodSeconds: 10
-        securityContext:
-          # Entrypoint must write conf.d after envsubst of UI_API_TOKEN; workers drop privileges via nginx master.
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
         resources:
           requests:
             cpu: 25m

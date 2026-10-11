@@ -6,14 +6,20 @@ server {
 
     # Browser calls same-origin /api/*; nginx injects the Bearer token from
     # UI_API_TOKEN (Secret) so the token never ships to the browser.
+    #
+    # Use a variable in proxy_pass so upstream DNS is resolved at request time
+    # (requires resolver). Hard-coded proxy_pass http://ui-backend:3001 would
+    # force resolve-at-startup and crash the Pod when the name is not yet in DNS.
     location /api/ {
+        resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+        set $ui_backend_upstream ui-backend.default.svc.cluster.local:3001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Authorization "Bearer ${UI_API_TOKEN}";
-        proxy_pass http://ui-backend:3001;
+        proxy_pass http://$ui_backend_upstream;
     }
 
     location / {
