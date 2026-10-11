@@ -49,6 +49,7 @@ jobs:
       FLUX_TARGET_NAMESPACE: flux-demo
       BENCHMARK_SAMPLES: "3"
       BENCHMARK_PROFILES: "equal-10s,defaults"
+      BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout code
@@ -275,3 +276,19 @@ jobs:
             docs/results.json
             docs/bench-raw/**
           if-no-files-found: warn
+
+      - name: Cleanup temporary bench branches
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
+        run: |
+          chmod +x .github/scripts/bench-local-git.sh
+          bash .github/scripts/bench-local-git.sh cleanup
+          # Extra sweep for any legacy ci-bench/* leftovers
+          for ref in $(git ls-remote --heads origin 'ci-bench/*' 'ci/bench-*' | awk '{print $2}'); do
+            branch=${ref#refs/heads/}
+            echo "Deleting leftover ${branch}"
+            git push origin --delete "${branch}" || true
+          done
+

@@ -26,6 +26,6 @@ These values are taken verbatim from the CI artifact / job logs. No estimated ti
 - **Time to Ready**: delete the Argo CD Application / Flux Kustomization and wipe the target workload, then start the timer at recreate and stop when the Deployment is Available and the app reports Synced+Healthy / Ready=True
 - **Time to Self-Heal**: recover after scaling replicas to 0
 - **Time to Deletion Recovery** (table header may still say Rollback in older artifacts): recover after deployment deletion (not a Git revert)
-- **Time to Commit→Ready**: push an image-tag change to a temporary `ci-bench/<run-id>` GitHub branch and time until the live Deployment image converges (polling only; no webhooks)
+- **Time to Commit→Ready**: push an image-tag change to a temporary `ci/bench-<run-id>` GitHub branch and time until the live Deployment image converges (polling only; no webhooks). The branch is deleted in an `if: always()` cleanup step.
 
 Re-run: Actions → **Demo results** or **GitOps Duel CI**.
