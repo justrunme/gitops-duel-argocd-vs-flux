@@ -134,7 +134,7 @@ ensure_argocd_http_repo() {
 create_argocd_application() {
   local repo=${1:-${REPO_URL}}
   local rev=${2:-${GIT_BRANCH}}
-  cat <<YAML | kubectl apply -f -
+  cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -162,7 +162,7 @@ YAML
 create_flux_kustomization() {
   local interval
   interval=$(profile_flux_interval)
-  cat <<YAML | kubectl apply -f -
+  cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -207,7 +207,7 @@ patch_flux_gitrepository() {
   if [[ "${url}" == http://* ]]; then
     enable_flux_http
   fi
-  cat <<YAML | kubectl apply -f -
+  cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -291,7 +291,7 @@ measure_time_to_ready() {
   # Restore Flux GitRepository to the CI-tracked remote for cold-start fairness
   local cold_repo="${TF_VAR_git_repository_url:-${REPO_URL}}"
   local cold_rev="${TF_VAR_git_branch:-${GIT_BRANCH}}"
-  cat <<YAML | kubectl apply -f -
+  cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -450,7 +450,7 @@ measure_commit_to_ready() {
     # Point Flux at the temporary branch while keeping profile interval
     local interval
     interval=$(profile_flux_interval)
-    cat <<YAML | kubectl apply -f -
+    cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:

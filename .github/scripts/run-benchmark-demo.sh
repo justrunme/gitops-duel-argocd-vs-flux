@@ -122,7 +122,7 @@ for profile in "${PROFILE_ARR[@]}"; do
     if kubectl get gitrepository local-repo -n flux-system >/dev/null 2>&1; then
       url=$(kubectl get gitrepository local-repo -n flux-system -o jsonpath='{.spec.url}')
       branch=$(kubectl get gitrepository local-repo -n flux-system -o jsonpath='{.spec.ref.branch}')
-      cat <<YAML | kubectl apply -f -
+      cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -135,7 +135,7 @@ spec:
   ref:
     branch: ${branch}
 YAML
-      cat <<YAML | kubectl apply -f -
+      cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
