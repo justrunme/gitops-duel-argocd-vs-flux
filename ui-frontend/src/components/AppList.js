@@ -10,6 +10,8 @@ function AppList() {
   useEffect(() => {
     const fetchApps = async () => {
       try {
+        // Same-origin /api/* — ui-frontend nginx injects Authorization from
+        // Secret ui-backend-api-token; the browser never holds the token.
         const [argocdRes, fluxRes] = await Promise.all([
           fetch('/api/argocd/applications'),
           fetch('/api/flux/kustomizations')

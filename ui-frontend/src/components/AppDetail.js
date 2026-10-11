@@ -25,6 +25,7 @@ function AppDetail() {
         let clusterRes;
         let gitRes;
 
+        // Same-origin /api/* — nginx injects Bearer token server-side (see nginx.conf.template).
         if (type === 'argocd') {
           clusterRes = await fetch(`/api/argocd/application/${name}/manifests?namespace=${namespace}`);
           gitRes = await fetch(`/api/git/manifests?repoUrl=${repoUrl}&appPath=${argocdAppPath}`);

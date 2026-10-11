@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Browser calls same-origin /api/*; nginx injects the Bearer token from
+    # UI_API_TOKEN (Secret) so the token never ships to the browser.
+    location /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "Bearer ${UI_API_TOKEN}";
+        proxy_pass http://ui-backend:3001;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
