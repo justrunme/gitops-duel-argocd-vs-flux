@@ -43,3 +43,8 @@ kubeconfig
 *.tmp
 *.temp
 FIXES_SUMMARY.md
+
+# Local benchmark scratch (CI uploads as artifacts)
+docs/bench-raw/
+.github/scripts/__pycache__/
+**/__pycache__/

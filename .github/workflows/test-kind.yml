@@ -2,12 +2,44 @@ name: GitOps Duel CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, "fix/**" ]
   pull_request:
 
 jobs:
+  ui-backend-unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui-backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui-backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Unit tests (malicious input rejection)
+        run: npm test
+        env:
+          NODE_ENV: test
+      - name: Guard against shell exec in request path
+        run: |
+          if grep -R --include='*.js' -nE "child_process|\\bexec\\(|execSync|execFile" app.js server.js lib/; then
+            echo "shell/child_process usage is forbidden in ui-backend request path" >&2
+            exit 1
+          fi
+
   gitops-duel-ci:
     runs-on: ubuntu-latest
+    needs: ui-backend-unit
+    permissions:
+      contents: write
+      actions: read
+      checks: read
     env:
       TF_VAR_git_repository_url: https://github.com/justrunme/gitops-duel-argocd-vs-flux.git
       TF_VAR_git_branch: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -15,9 +47,16 @@ jobs:
       TF_VAR_flux_target_namespace: flux-demo
       ARGO_TARGET_NAMESPACE: argocd-demo
       FLUX_TARGET_NAMESPACE: flux-demo
+      BENCHMARK_SAMPLES: "3"
+      BENCHMARK_PROFILES: "equal-10s,defaults"
+      BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup KinD
         uses: helm/kind-action@v1.15.1
@@ -78,37 +117,59 @@ jobs:
         id: benchmark
         run: |
           mkdir -p docs
-          chmod +x .github/scripts/benchmark-gitops.sh .github/scripts/run-benchmark-demo.sh
+          chmod +x .github/scripts/benchmark-gitops.sh .github/scripts/run-benchmark-demo.sh .github/scripts/bench-local-git.sh
           bash .github/scripts/run-benchmark-demo.sh
           python3 .github/scripts/write_demo_results.py
           cat docs/results.md >> "$GITHUB_STEP_SUMMARY"
 
           python3 - <<'PY'
           import json, re, sys
+          from pathlib import Path
+
           data = json.load(open("docs/results.json"))
-          mapping = {
-              "Argo CD": ("argocd_ready", "argocd_heal", "argocd_rollback"),
-              "Flux": ("flux_ready", "flux_heal", "flux_rollback"),
-          }
           num = re.compile(r"\d+(?:\.\d+)?")
+          profiles = data.get("profiles") or {}
+          if "equal-10s" not in profiles or "defaults" not in profiles:
+              print(f"missing required profiles, have={list(profiles)}", file=sys.stderr)
+              sys.exit(1)
+          if int(data.get("samples_per_metric", 0)) < 3:
+              print("samples_per_metric must be >= 3", file=sys.stderr)
+              sys.exit(1)
+
+          required = [
+              "time_to_ready_seconds",
+              "time_to_self_heal_seconds",
+              "time_to_deletion_recovery_seconds",
+              "time_to_commit_ready_seconds",
+          ]
           outs = []
-          for tool, keys in mapping.items():
-              m = data["metrics"][tool]
-              vals = [
-                  m["time_to_ready_seconds"],
-                  m["time_to_self_heal_seconds"],
-                  m["time_to_rollback_seconds"],
-              ]
-              for idx, (k, v) in enumerate(zip(keys, vals)):
-                  v = str(v).strip()
-                  if not num.fullmatch(v):
-                      print(f"Non-numeric benchmark value: {tool} {k}={v!r}", file=sys.stderr)
-                      sys.exit(1)
-                  if idx == 0 and float(v) <= 0:
-                      print(f"time_to_ready must be > 0: {tool} {k}={v!r}", file=sys.stderr)
-                      sys.exit(1)
-                  outs.append(f"{k}={v}")
-          Path = __import__("pathlib").Path
+          for profile, pdata in profiles.items():
+              for tool, metrics in pdata.get("metrics", {}).items():
+                  for key in required:
+                      block = metrics.get(key)
+                      if not isinstance(block, dict):
+                          print(f"missing {profile}/{tool}/{key}", file=sys.stderr)
+                          sys.exit(1)
+                      for field in ("median", "min", "max"):
+                          v = str(block.get(field, "")).strip()
+                          if not num.fullmatch(v):
+                              print(f"non-numeric {profile}/{tool}/{key}.{field}={v!r}", file=sys.stderr)
+                              sys.exit(1)
+                          if key in ("time_to_ready_seconds", "time_to_commit_ready_seconds") and float(v) <= 0:
+                              print(f"{key} must be > 0: {profile}/{tool} {field}={v!r}", file=sys.stderr)
+                              sys.exit(1)
+                      samples = block.get("samples") or []
+                      if len(samples) < 3:
+                          print(f"N<3 for {profile}/{tool}/{key}: {samples!r}", file=sys.stderr)
+                          sys.exit(1)
+                  # Export primary-profile medians for step summary compatibility
+                  if profile == data.get("primary_profile"):
+                      prefix = "argocd" if tool == "Argo CD" else "flux"
+                      outs.append(f"{prefix}_ready={metrics['time_to_ready_seconds']['median']}")
+                      outs.append(f"{prefix}_heal={metrics['time_to_self_heal_seconds']['median']}")
+                      outs.append(f"{prefix}_rollback={metrics['time_to_deletion_recovery_seconds']['median']}")
+                      outs.append(f"{prefix}_commit={metrics['time_to_commit_ready_seconds']['median']}")
+
           Path("/tmp/bench_out.env").write_text("\n".join(outs) + "\n")
           print("\n".join(outs))
           PY
@@ -213,4 +274,21 @@ jobs:
           path: |
             docs/results.md
             docs/results.json
+            docs/bench-raw/**
           if-no-files-found: warn
+
+      - name: Cleanup temporary bench branches
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
+        run: |
+          chmod +x .github/scripts/bench-local-git.sh
+          bash .github/scripts/bench-local-git.sh cleanup
+          # Extra sweep for legacy ci-bench/* only (never mass-delete ci/bench-* of other runs)
+          for ref in $(git ls-remote --heads origin 'ci-bench/*' | awk '{print $2}'); do
+            branch=${ref#refs/heads/}
+            echo "Deleting leftover ${branch}"
+            git push origin --delete "${branch}" || true
+          done
+
