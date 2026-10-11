@@ -508,16 +508,18 @@ YAML
   return 1
 }
 
-time_to_ready=$(measure_time_to_ready)
+# Defense in depth: measurement helpers must only print the timing, but if any
+# tooling leaks a line to stdout, keep the last line (the elapsed value).
+time_to_ready=$(measure_time_to_ready | tail -n 1)
 assert_ready_credible "${time_to_ready}"
 
-time_to_heal=$(measure_self_heal)
+time_to_heal=$(measure_self_heal | tail -n 1)
 assert_numeric "time_to_heal" "${time_to_heal}"
 
-time_to_deletion_recovery=$(measure_deletion_recovery)
+time_to_deletion_recovery=$(measure_deletion_recovery | tail -n 1)
 assert_numeric "time_to_deletion_recovery" "${time_to_deletion_recovery}"
 
-time_to_commit_ready=$(measure_commit_to_ready)
+time_to_commit_ready=$(measure_commit_to_ready | tail -n 1)
 assert_numeric "time_to_commit_ready" "${time_to_commit_ready}"
 awk -v v="${time_to_commit_ready}" 'BEGIN { exit (v > 0 ? 0 : 1) }' \
   || fail "time_to_commit_ready=${time_to_commit_ready}s is not credible"
