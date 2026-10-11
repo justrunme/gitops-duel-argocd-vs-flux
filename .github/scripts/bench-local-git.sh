@@ -44,11 +44,12 @@ bench_git_commit() {
       log "bench-git: nothing to commit (${message})"
       return 0
     fi
+    # Keep git chatter off stdout — callers capture timing via command substitution.
     git \
       -c user.name="${BENCH_GIT_AUTHOR_NAME}" \
       -c user.email="${BENCH_GIT_AUTHOR_EMAIL}" \
-      commit -m "${message} [skip ci]"
-    git push -u origin "HEAD:${BENCH_GIT_BRANCH}"
+      commit -m "${message} [skip ci]" >/dev/null
+    git push origin "HEAD:refs/heads/${BENCH_GIT_BRANCH}" >/dev/null
   )
 }
 
