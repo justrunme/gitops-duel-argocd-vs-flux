@@ -15,13 +15,35 @@ const { fetchGitManifests } = require('./lib/git-manifests');
 function parseCorsOrigins() {
   const raw = process.env.CORS_ORIGINS;
   if (raw === undefined || raw === null || String(raw).trim() === '') {
-    // Default: same-origin only (no cross-origin ACAO reflection)
     return [];
   }
   return String(raw)
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function apiToken() {
+  const t = process.env.UI_API_TOKEN;
+  if (t === undefined || t === null) return '';
+  return String(t);
+}
+
+function requireApiAuth(req, res, next) {
+  const expected = apiToken();
+  if (!expected) {
+    // Misconfiguration in production: refuse rather than open the API
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ error: 'API token not configured' });
+    }
+    return next();
+  }
+  const hdr = req.headers.authorization || '';
+  const m = /^Bearer\s+(.+)$/i.exec(hdr);
+  if (!m || m[1] !== expected) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  return next();
 }
 
 function createApp(options = {}) {
@@ -65,6 +87,7 @@ function createApp(options = {}) {
     message: { error: 'Too many requests' },
   });
   app.use('/api/', limiter);
+  app.use('/api/', requireApiAuth);
 
   app.get('/', (_req, res) => {
     res.type('text').send('UI Backend is running!');
@@ -142,7 +165,6 @@ function createApp(options = {}) {
     }
   });
 
-  // Safe git manifests: HTTPS GitHub API only, allowlisted repo/path, no shell
   app.get('/api/git/manifests', async (req, res) => {
     const repoCheck = validateRepoUrl(req.query.repoUrl);
     if (!repoCheck.ok) {
@@ -168,4 +190,4 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, parseCorsOrigins };
+module.exports = { createApp, parseCorsOrigins, requireApiAuth, apiToken };
