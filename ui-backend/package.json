@@ -4,7 +4,7 @@
   "description": "GitOps Duel UI Backend - Kubernetes API proxy",
   "main": "server.js",
   "scripts": {
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test test/",
     "start": "node server.js",
     "dev": "node server.js"
   },
