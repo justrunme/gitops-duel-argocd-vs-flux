@@ -414,10 +414,10 @@ measure_deletion_recovery() {
 }
 
 measure_commit_to_ready() {
-  log "Measuring commit→ready (image tag bump on local git server)..."
+  log "Measuring commit→ready (image tag bump on temporary GitHub branch)..."
   require_deployment
 
-  if [ -z "${BENCH_GIT_URL:-}" ] || [ ! -d "${BENCH_GIT_SRC:-/nonexistent}" ]; then
+  if [ -z "${BENCH_GIT_BRANCH:-}" ] || [ ! -d "${BENCH_GIT_SRC:-/nonexistent}/.git" ]; then
     setup_bench_git_server "$(cd "${SCRIPT_DIR}/../.." && pwd)"
   fi
 
@@ -428,11 +428,9 @@ measure_commit_to_ready() {
     target_image=nginx:1.27-alpine
   fi
 
-  # Point the tool at the local git server (both stay warm; only the commit is new)
+  # Retarget to the temporary HTTPS GitHub branch (no insecure HTTP / local git server)
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
-    ensure_argocd_http_repo "${BENCH_GIT_URL}"
-    create_argocd_application "${BENCH_GIT_URL}" "main" >/dev/null
-    # Wait until Argo is synced to local baseline before committing the change
+    create_argocd_application "${BENCH_GIT_URL}" "${BENCH_GIT_BRANCH}" >/dev/null
     local warm_deadline=$(( $(date +%s) + TIMEOUT ))
     while true; do
       local sync health
@@ -442,13 +440,29 @@ measure_commit_to_ready() {
         break
       fi
       if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
-        fail "Argo CD did not sync to local git baseline before commit timing"
+        kubectl get application "${APP_NAME}" -n argocd -o yaml >&2 || true
+        fail "Argo CD did not sync to bench branch ${BENCH_GIT_BRANCH} before commit timing"
         return 1
       fi
       sleep "${POLL_INTERVAL}"
     done
   else
-    patch_flux_gitrepository "${BENCH_GIT_URL}"
+    # Point Flux at the temporary branch while keeping profile interval
+    local interval
+    interval=$(profile_flux_interval)
+    cat <<YAML | kubectl apply -f -
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: local-repo
+  namespace: flux-system
+spec:
+  interval: ${interval}
+  timeout: 60s
+  url: ${BENCH_GIT_URL}
+  ref:
+    branch: ${BENCH_GIT_BRANCH}
+YAML
     create_flux_kustomization >/dev/null
     local warm_deadline=$(( $(date +%s) + TIMEOUT ))
     while true; do
@@ -459,14 +473,15 @@ measure_commit_to_ready() {
         break
       fi
       if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
-        fail "Flux did not sync to local git baseline before commit timing"
+        kubectl get gitrepository local-repo -n flux-system -o yaml >&2 || true
+        kubectl get kustomization flux-nginx-app -n flux-system -o yaml >&2 || true
+        fail "Flux did not sync to bench branch ${BENCH_GIT_BRANCH} before commit timing"
         return 1
       fi
       sleep "${POLL_INTERVAL}"
     done
   fi
 
-  # Commit image tag change for the relevant app path
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
     sed -i "s|image: nginx:.*|image: ${target_image}|" \
       "${BENCH_GIT_SRC}/apps/argocd/nginx/deployment.yaml"

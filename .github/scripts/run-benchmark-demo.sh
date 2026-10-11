@@ -62,7 +62,13 @@ run_tool_samples() {
 }
 
 TMPDIR_BENCH=$(mktemp -d)
-trap 'rm -rf "${TMPDIR_BENCH}"' EXIT
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/bench-local-git.sh"
+cleanup_all() {
+  rm -rf "${TMPDIR_BENCH}"
+  cleanup_bench_git_branch || true
+}
+trap cleanup_all EXIT
 
 {
   echo "# GitOps Performance Benchmarks"
@@ -78,7 +84,7 @@ trap 'rm -rf "${TMPDIR_BENCH}"' EXIT
   echo "| \`equal-10s\` | 10s | 10s |"
   echo "| \`defaults\` | 180s (Argo stock) | 1m (CI-bounded stand-in; stock Flux Kustomization default is 10m) |"
   echo ""
-  echo "Commit→ready pushes an image-tag change to an in-cluster dumb-HTTP git server and times convergence (polling only; no webhooks)."
+  echo "Commit→ready pushes an image-tag change to a temporary \`ci-bench/<run-id>\` GitHub branch and times convergence (polling only; no webhooks)."
   echo ""
   echo "Deletion recovery recreates a deleted Deployment (not a Git revert)."
   echo ""
