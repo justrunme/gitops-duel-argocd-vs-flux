@@ -19,17 +19,17 @@ Deletion recovery recreates a deleted Deployment (not a Git revert).
 
 | Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Deletion Recovery (s) | Time to Commit→Ready (s) |
 |------|-------------------|----------------------|-------------------------------|--------------------------|
-| Argo CD | 4.191 (min 3.627, max 4.205, n=3) | 3.384 (min 3.321, max 3.926, n=3) | 3.540 (min 2.867, max 4.195, n=3) | 16.083 (min 14.236, max 16.579, n=3) |
-| Flux | 6.456 (min 6.432, max 6.489, n=3) | 13.050 (min 12.420, max 13.080, n=3) | 70.335 (min 69.950, max 70.444, n=3) | 8.734 (min 3.589, max 9.242, n=3) |
+| Argo CD | 3.759 (min 3.161, max 4.366, n=3) | 3.666 (min 3.623, max 3.671, n=3) | 3.130 (min 3.116, max 3.146, n=3) | 19.068 (min 15.300, max 36.912, n=3) |
+| Flux | 6.167 (min 6.136, max 6.187, n=3) | 12.767 (min 11.716, max 13.357, n=3) | 70.208 (min 69.905, max 70.444, n=3) | 8.289 (min 4.006, max 8.843, n=3) |
 
 ## Profile `defaults`
 
 | Tool | Time to Ready (s) | Time to Self-Heal (s) | Time to Deletion Recovery (s) | Time to Commit→Ready (s) |
 |------|-------------------|----------------------|-------------------------------|--------------------------|
-| Argo CD | 4.167 (min 3.560, max 4.170, n=3) | 3.316 (min 3.312, max 3.917, n=3) | 3.490 (min 3.483, max 4.143, n=3) | 183.890 (min 176.438, max 358.543, n=3) |
-| Flux | 6.451 (min 6.440, max 6.480, n=3) | 61.267 (min 60.727, max 62.460, n=3) | 119.841 (min 119.729, max 120.076, n=3) | 52.755 (min 51.435, max 58.885, n=3) |
+| Argo CD | 3.768 (min 3.729, max 3.843, n=3) | 3.623 (min 3.603, max 3.635, n=3) | 3.170 (min 3.153, max 3.767, n=3) | 312.054 (min 206.794, max 344.024, n=3) |
+| Flux | 6.130 (min 6.127, max 6.166, n=3) | 65.157 (min 64.444, max 66.093, n=3) | 119.997 (min 119.985, max 120.506, n=3) | 54.182 (min 53.135, max 57.425, n=3) |
 
-Run date: 2026-10-11 10:14:48 UTC
-Source run: https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38129173686
+Run date: 2026-10-11 11:00:03 UTC
+Source run: https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035
 
 These values are taken verbatim from the CI job. No estimated timings are published.
