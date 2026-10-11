@@ -39,7 +39,7 @@ function requireApiAuth(req, res, next) {
     return next();
   }
   const hdr = req.headers.authorization || '';
-  const m = /^Bearer\s+(.+)$/i.exec(hdr);
+  const m = hdr.match(/^Bearer\s+(.+)$/i);
   if (!m || m[1] !== expected) {
     return res.status(401).json({ error: 'unauthorized' });
   }
