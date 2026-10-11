@@ -1,6 +1,8 @@
 'use strict';
 
-const { createApp } = require('./app');
+const { createApp, assertAuthConfigured } = require('./app');
+
+assertAuthConfigured();
 
 const port = Number(process.env.PORT || 3001);
 const app = createApp();

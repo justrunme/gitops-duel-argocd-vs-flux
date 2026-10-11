@@ -201,9 +201,9 @@ jobs:
           # Ensure demo namespaces exist before namespaced RoleBindings
           kubectl create namespace argocd-demo --dry-run=client -o yaml | kubectl apply -f -
           kubectl create namespace flux-demo --dry-run=client -o yaml | kubectl apply -f -
-          # Bearer token Secret before Deployment (envFrom secretKeyRef)
+          # Bearer token Secret before Deployments (never apply a committed token manifest)
           kubectl create secret generic ui-backend-api-token \
-            --from-file=token=/tmp/ui_api_token \
+            --from-literal=token="$(cat /tmp/ui_api_token)" \
             --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f kubernetes/ui/backend-rbac.yaml
           kubectl apply -f kubernetes/ui/backend-deployment.yaml
@@ -211,8 +211,25 @@ jobs:
           kubectl apply -f kubernetes/ui/frontend-deployment.yaml
           kubectl apply -f kubernetes/ui/frontend-service.yaml
           kubectl apply -f kubernetes/ui/ingress.yaml
-          kubectl -n default rollout status deployment/ui-backend --timeout=180s
-          kubectl -n default rollout status deployment/ui-frontend --timeout=180s
+          if ! kubectl -n default rollout status deployment/ui-backend --timeout=180s; then
+            echo "::error::ui-backend rollout failed"
+            kubectl -n default get pods,deploy,svc -l 'app in (ui-backend,ui-frontend)' -o wide || true
+            kubectl -n default describe deploy/ui-backend || true
+            kubectl -n default describe pods -l app=ui-backend || true
+            kubectl -n default logs deploy/ui-backend --tail=120 || true
+            kubectl -n default logs deploy/ui-frontend --tail=120 || true
+            exit 1
+          fi
+          if ! kubectl -n default rollout status deployment/ui-frontend --timeout=180s; then
+            echo "::error::ui-frontend rollout failed"
+            kubectl -n default get pods,deploy,svc -l 'app in (ui-backend,ui-frontend)' -o wide || true
+            kubectl -n default describe deploy/ui-frontend || true
+            kubectl -n default describe pods -l app=ui-frontend || true
+            kubectl -n default logs deploy/ui-frontend --tail=120 || true
+            kubectl -n default logs deploy/ui-backend --tail=120 || true
+            kubectl -n default get secret ui-backend-api-token -o jsonpath='{.data.token}' | wc -c || true
+            exit 1
+          fi
 
       - name: E2E UI backend health and auth
         run: |
@@ -253,6 +270,38 @@ jobs:
             exit 1
           fi
           echo "E2E UI backend checks passed"
+
+      - name: E2E UI frontend proxy injects API auth
+        run: |
+          set -euo pipefail
+          kubectl -n default port-forward svc/ui-frontend 8082:80 >/tmp/ui-fe-pf.log 2>&1 &
+          PF_PID=$!
+          cleanup() { kill "${PF_PID}" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ok=0
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:8082/ >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "${ok}" != "1" ]; then
+            echo "frontend port-forward never became ready" >&2
+            cat /tmp/ui-fe-pf.log >&2 || true
+            kubectl -n default logs deploy/ui-frontend --tail=80 >&2 || true
+            exit 1
+          fi
+          # Browser path: no Authorization header; nginx must inject Bearer from Secret
+          code=$(curl -s -o /tmp/fe_api.json -w '%{http_code}' \
+            http://127.0.0.1:8082/api/argocd/applications)
+          echo "frontend proxy api code=${code} body=$(cat /tmp/fe_api.json)"
+          if [ "${code}" != "200" ]; then
+            kubectl -n default logs deploy/ui-frontend --tail=80 >&2 || true
+            kubectl -n default logs deploy/ui-backend --tail=80 >&2 || true
+            exit 1
+          fi
+          echo "E2E UI frontend proxy checks passed"
 
       - name: Debug ArgoCD deployed apps
         if: always()

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate DNS-1123 names, namespace/repo/path allowlists; restrict CORS; add helmet + rate limiting
 - Replace `git clone` shell-out with allowlisted HTTPS GitHub Contents fetch
 - Read-only ServiceAccount RBAC for the UI backend
+- ui-backend: Bearer token always required for `/api/*` (no NODE_ENV open path); fail startup without `UI_API_TOKEN` unless `AUTH_DISABLED=true`
+- ui-frontend: nginx injects `Authorization` from Secret on `/api/*` (token never in the browser)
+- Remove committed `change-me` API token Secret; generate in CI/kind and document for real deployments
 
 ### Changed
 - Benchmarks: N=3 median/min/max, `equal-10s` and `defaults` reconcile profiles, commit→ready metric
