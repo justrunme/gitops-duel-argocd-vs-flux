@@ -72,7 +72,8 @@ setup_bench_git_server() {
       commit -m "bench: initial [skip ci]" >/dev/null
   )
   configure_push_remote "${BENCH_GIT_URL}"
-  git -C "${BENCH_GIT_SRC}" push -u origin "HEAD:${BENCH_GIT_BRANCH}" --force
+  # No -u / no stdout: timing helpers capture stdout via command substitution.
+  git -C "${BENCH_GIT_SRC}" push origin "HEAD:refs/heads/${BENCH_GIT_BRANCH}" --force >/dev/null
 
   export BENCH_GIT_URL BENCH_GIT_BRANCH BENCH_GIT_SRC
   if [ -n "${GITHUB_ENV:-}" ]; then
