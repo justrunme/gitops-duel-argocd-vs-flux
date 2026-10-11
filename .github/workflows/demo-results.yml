@@ -25,6 +25,8 @@ jobs:
       TF_VAR_flux_target_namespace: flux-demo
       ARGO_TARGET_NAMESPACE: argocd-demo
       FLUX_TARGET_NAMESPACE: flux-demo
+      BENCHMARK_SAMPLES: "3"
+      BENCHMARK_PROFILES: "equal-10s,defaults"
     steps:
       - uses: actions/checkout@v7
       - name: Setup KinD
@@ -60,28 +62,49 @@ jobs:
       - name: Record benchmarks
         run: |
           mkdir -p docs/assets
-          chmod +x .github/scripts/run-benchmark-demo.sh .github/scripts/benchmark-gitops.sh
+          chmod +x .github/scripts/run-benchmark-demo.sh .github/scripts/benchmark-gitops.sh .github/scripts/bench-local-git.sh
           asciinema rec --overwrite -c 'bash .github/scripts/run-benchmark-demo.sh' docs/assets/gitops-duel.cast
           svg-term --in docs/assets/gitops-duel.cast --out docs/assets/gitops-duel.svg --window --width 100 --height 24 --no-cursor
           python3 .github/scripts/write_demo_results.py
           cat docs/results.md
           cat docs/results.json
-          # Fail the job if any cell is non-numeric
           python3 - <<'PY'
           import json, re, sys
           data = json.load(open("docs/results.json"))
           ok = True
           num = re.compile(r"\d+(?:\.\d+)?")
-          for tool, m in data.get("metrics", {}).items():
-              for k, v in m.items():
-                  s = str(v).strip()
-                  if not num.fullmatch(s):
-                      print(f"INVALID {tool}.{k}={v!r}", file=sys.stderr)
-                      ok = False
-                      continue
-                  if k == "time_to_ready_seconds" and float(s) <= 0:
-                      print(f"INVALID {tool}.{k}={v!r} (must be > 0 for cold-start)", file=sys.stderr)
-                      ok = False
+          profiles = data.get("profiles") or {}
+          if "equal-10s" not in profiles or "defaults" not in profiles:
+              print(f"INVALID profiles={list(profiles)}", file=sys.stderr)
+              ok = False
+          if int(data.get("samples_per_metric", 0)) < 3:
+              print("INVALID samples_per_metric < 3", file=sys.stderr)
+              ok = False
+          required = [
+              "time_to_ready_seconds",
+              "time_to_self_heal_seconds",
+              "time_to_deletion_recovery_seconds",
+              "time_to_commit_ready_seconds",
+          ]
+          for profile, pdata in profiles.items():
+              for tool, metrics in pdata.get("metrics", {}).items():
+                  for key in required:
+                      block = metrics.get(key)
+                      if not isinstance(block, dict):
+                          print(f"INVALID missing {profile}/{tool}/{key}", file=sys.stderr)
+                          ok = False
+                          continue
+                      for field in ("median", "min", "max"):
+                          s = str(block.get(field, "")).strip()
+                          if not num.fullmatch(s):
+                              print(f"INVALID {profile}/{tool}/{key}.{field}={s!r}", file=sys.stderr)
+                              ok = False
+                          elif key in ("time_to_ready_seconds", "time_to_commit_ready_seconds") and float(s) <= 0:
+                              print(f"INVALID {profile}/{tool}/{key}.{field}={s!r} (must be > 0)", file=sys.stderr)
+                              ok = False
+                      if len(block.get("samples") or []) < 3:
+                          print(f"INVALID N<3 {profile}/{tool}/{key}", file=sys.stderr)
+                          ok = False
           sys.exit(0 if ok else 1)
           PY
       - uses: actions/upload-artifact@v7
@@ -91,5 +114,6 @@ jobs:
           path: |
             docs/results.md
             docs/results.json
+            docs/bench-raw/**
             docs/assets/gitops-duel.cast
             docs/assets/gitops-duel.svg

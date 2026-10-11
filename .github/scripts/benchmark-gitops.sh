@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Measure GitOps Time-to-Ready / Self-Heal / Rollback.
-# Progress logs go to stderr; the final CSV line goes to stdout.
+# Measure GitOps Time-to-Ready / Self-Heal / Deletion-Recovery / Commit-to-Ready.
+# Progress logs go to stderr; the final CSV line goes to stdout:
+#   ready,heal,deletion_recovery,commit_ready
 # Exits non-zero if any measurement fails (no failure masking).
 set -euo pipefail
 
@@ -11,13 +12,17 @@ TIMEOUT=${BENCHMARK_TIMEOUT:-300}
 REPO_URL=${TF_VAR_git_repository_url:-https://github.com/justrunme/gitops-duel-argocd-vs-flux.git}
 GIT_BRANCH=${TF_VAR_git_branch:-main}
 POLL_INTERVAL=${BENCHMARK_POLL_INTERVAL:-0.5}
+# equal-10s | defaults
+BENCHMARK_PROFILE=${BENCHMARK_PROFILE:-equal-10s}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/bench-local-git.sh"
 
 log() { printf '%s\n' "$*" >&2; }
 fail() { log "ERROR: $*"; return 1; }
 
 now() { date +%s.%N; }
 
-# Elapsed seconds between start and now, 3 decimal places
 elapsed_since() {
   local start=$1
   awk -v s="${start}" -v e="$(now)" 'BEGIN { printf "%.3f", e - s }'
@@ -28,7 +33,6 @@ elapsed_int() {
   awk -v s="${start}" -v e="$(now)" 'BEGIN { printf "%d", e - s }'
 }
 
-# Accept integers or decimals; reject empty / non-numeric / masked strings
 assert_numeric() {
   local label=$1 value=$2
   if ! [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -37,7 +41,6 @@ assert_numeric() {
   fi
 }
 
-# Time-to-Ready must be a real cold-start measurement (> 0)
 assert_ready_credible() {
   local value=$1
   assert_numeric "time_to_ready" "${value}"
@@ -55,11 +58,15 @@ deployment_available() {
   [ "${desired}" != "0" ] && [ "${ready}" = "${desired}" ]
 }
 
+deployment_image() {
+  kubectl get deployment "${APP_NAME}" -n "${NAMESPACE}" \
+    -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true
+}
+
 ensure_namespace() {
   kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
-# Remove workload objects so the next sync is a cold create
 wipe_workload() {
   kubectl delete deployment "${APP_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=90s >/dev/null 2>&1 || true
   kubectl delete service "${APP_NAME}" -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || true
@@ -80,14 +87,53 @@ require_deployment() {
   fi
 }
 
-log "=== GitOps Performance Benchmark: ${GITOPS_TOOL} ==="
-log "Namespace: ${NAMESPACE}"
-log "Application: ${APP_NAME}"
-log "Repo: ${REPO_URL} @ ${GIT_BRANCH}"
-log "Timeout: ${TIMEOUT}s"
-log ""
+profile_flux_interval() {
+  case "${BENCHMARK_PROFILE}" in
+    equal-10s) echo "10s" ;;
+    defaults) echo "1m" ;; # Flux Kustomization stock default is 10m; 1m keeps CI bounded while remaining slower than tuned
+    *) fail "unknown BENCHMARK_PROFILE=${BENCHMARK_PROFILE}"; return 1 ;;
+  esac
+}
+
+profile_argocd_reconciliation() {
+  case "${BENCHMARK_PROFILE}" in
+    equal-10s) echo "10s" ;;
+    defaults) echo "180s" ;;
+    *) fail "unknown BENCHMARK_PROFILE=${BENCHMARK_PROFILE}"; return 1 ;;
+  esac
+}
+
+apply_argocd_reconciliation() {
+  local recon
+  recon=$(profile_argocd_reconciliation)
+  log "Setting Argo CD timeout.reconciliation=${recon} (profile=${BENCHMARK_PROFILE})"
+  kubectl -n argocd create configmap argocd-cm --dry-run=client -o yaml \
+    | kubectl apply -f - >/dev/null
+  kubectl -n argocd patch configmap argocd-cm --type merge \
+    -p "{\"data\":{\"timeout.reconciliation\":\"${recon}\"}}" >/dev/null
+  # Restart application controller so the setting is picked up
+  kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null 2>&1 \
+    || kubectl -n argocd rollout restart deployment/argocd-application-controller >/dev/null 2>&1 \
+    || true
+  kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
+    || kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=180s >/dev/null 2>&1 \
+    || true
+}
+
+ensure_argocd_http_repo() {
+  local url=$1
+  kubectl -n argocd delete secret repo-bench-git --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n argocd create secret generic repo-bench-git \
+    --from-literal=type=git \
+    --from-literal=url="${url}" \
+    --from-literal=insecure=true >/dev/null
+  kubectl -n argocd label secret repo-bench-git \
+    argocd.argoproj.io/secret-type=repository --overwrite >/dev/null
+}
 
 create_argocd_application() {
+  local repo=${1:-${REPO_URL}}
+  local rev=${2:-${GIT_BRANCH}}
   cat <<YAML | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -97,8 +143,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REPO_URL}
-    targetRevision: ${GIT_BRANCH}
+    repoURL: ${repo}
+    targetRevision: ${rev}
     path: apps/argocd/nginx
   destination:
     server: https://kubernetes.default.svc
@@ -114,6 +160,8 @@ YAML
 }
 
 create_flux_kustomization() {
+  local interval
+  interval=$(profile_flux_interval)
   cat <<YAML | kubectl apply -f -
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -121,9 +169,9 @@ metadata:
   name: flux-nginx-app
   namespace: flux-system
 spec:
-  interval: 10s
+  interval: ${interval}
   timeout: 60s
-  retryInterval: 10s
+  retryInterval: ${interval}
   path: ./apps/flux/nginx
   prune: true
   wait: true
@@ -134,20 +182,72 @@ spec:
 YAML
 }
 
+enable_flux_http() {
+  # Flux source-controller disables plain HTTP unless explicitly allowed.
+  local deploy=source-controller
+  if ! kubectl -n flux-system get deploy "${deploy}" >/dev/null 2>&1; then
+    return 0
+  fi
+  local args
+  args=$(kubectl -n flux-system get deploy "${deploy}" -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || true)
+  if echo "${args}" | grep -q -- '--insecure-allow-http'; then
+    return 0
+  fi
+  log "Enabling --insecure-allow-http on flux-system/${deploy}"
+  kubectl -n flux-system patch deploy "${deploy}" --type='json' -p='[
+    {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--insecure-allow-http"}
+  ]' >/dev/null
+  kubectl -n flux-system rollout status deploy/"${deploy}" --timeout=180s >/dev/null
+}
+
+patch_flux_gitrepository() {
+  local url=$1
+  local interval
+  interval=$(profile_flux_interval)
+  if [[ "${url}" == http://* ]]; then
+    enable_flux_http
+  fi
+  cat <<YAML | kubectl apply -f -
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: local-repo
+  namespace: flux-system
+spec:
+  interval: ${interval}
+  timeout: 60s
+  url: ${url}
+  ref:
+    branch: main
+YAML
+}
+
+log "=== GitOps Performance Benchmark: ${GITOPS_TOOL} ==="
+log "Namespace: ${NAMESPACE}"
+log "Application: ${APP_NAME}"
+log "Profile: ${BENCHMARK_PROFILE}"
+log "Repo: ${REPO_URL} @ ${GIT_BRANCH}"
+log "Timeout: ${TIMEOUT}s"
+log "Intervals: Argo reconciliation=$(profile_argocd_reconciliation), Flux interval=$(profile_flux_interval)"
+log ""
+
+# Profile controllers are applied by run-benchmark-demo.sh once per profile
+# (set BENCHMARK_APPLY_PROFILE=1 to apply inline for standalone runs).
+if [ "${BENCHMARK_APPLY_PROFILE:-0}" = "1" ]; then
+  apply_argocd_reconciliation
+fi
+
 measure_time_to_ready() {
   log "Measuring time to Ready from Application/Kustomization creation (cold start)..."
 
   ensure_namespace
 
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
-    # Prefer live values from an existing Application when present
-    if kubectl get application "${APP_NAME}" -n argocd >/dev/null 2>&1; then
-      REPO_URL=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.spec.source.repoURL}')
-      GIT_BRANCH=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.spec.source.targetRevision}')
-      log "Using existing Application source: ${REPO_URL} @ ${GIT_BRANCH}"
-    fi
+    # Always cold-start from the CI-tracked GitHub repo/branch (not the local bench git URL).
+    local cold_repo="${TF_VAR_git_repository_url:-${REPO_URL}}"
+    local cold_rev="${TF_VAR_git_branch:-${GIT_BRANCH}}"
+    log "Cold-start source: ${cold_repo} @ ${cold_rev}"
 
-    # Tear down Application (prune) and wipe any leftover workload
     kubectl delete application "${APP_NAME}" -n argocd --ignore-not-found --wait=true --timeout=120s >/dev/null
     wipe_workload
 
@@ -162,7 +262,7 @@ measure_time_to_ready() {
 
     local start_time
     start_time=$(now)
-    create_argocd_application >/dev/null
+    create_argocd_application "${cold_repo}" "${cold_rev}" >/dev/null
 
     while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
       local sync health
@@ -181,14 +281,29 @@ measure_time_to_ready() {
     return 1
   fi
 
-  # Flux path
-  if kubectl get kustomization flux-nginx-app -n flux-system >/dev/null 2>&1; then
-    log "Recreating Flux Kustomization flux-nginx-app (GitRepository kept)"
-  fi
+  # Flux path — recreate BOTH GitRepository artifact path fairness: keep GitRepository
+  # but recreate Kustomization. For cold-start we keep GitRepository (artifact cached)
+  # matching prior behaviour; commit-to-ready exercises a fresh fetch.
   if ! kubectl get gitrepository local-repo -n flux-system >/dev/null 2>&1; then
     fail "Flux GitRepository local-repo not found in flux-system (required for cold start)"
     return 1
   fi
+  # Restore Flux GitRepository to the CI-tracked remote for cold-start fairness
+  local cold_repo="${TF_VAR_git_repository_url:-${REPO_URL}}"
+  local cold_rev="${TF_VAR_git_branch:-${GIT_BRANCH}}"
+  cat <<YAML | kubectl apply -f -
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: local-repo
+  namespace: flux-system
+spec:
+  interval: $(profile_flux_interval)
+  timeout: 60s
+  url: ${cold_repo}
+  ref:
+    branch: ${cold_rev}
+YAML
 
   kubectl delete kustomization flux-nginx-app -n flux-system --ignore-not-found --wait=true --timeout=120s >/dev/null
   wipe_workload
@@ -225,7 +340,7 @@ measure_time_to_ready() {
 }
 
 measure_self_heal() {
-  log "Measuring self-heal time after manual drift..."
+  log "Measuring self-heal time after manual replica drift..."
   require_deployment
 
   local original_replicas
@@ -236,7 +351,6 @@ measure_self_heal() {
   fi
 
   kubectl scale deployment "${APP_NAME}" --replicas=0 -n "${NAMESPACE}" >/dev/null
-  # Wait until drift is visible (replicas scaled down) before starting the timer
   local drift_deadline=$(( $(date +%s) + 30 ))
   while true; do
     local cur
@@ -272,8 +386,9 @@ measure_self_heal() {
   return 1
 }
 
-measure_rollback() {
-  log "Measuring rollback time after deployment deletion..."
+# Deletion recovery (formerly labeled "rollback"): recreate after out-of-band delete
+measure_deletion_recovery() {
+  log "Measuring deletion-recovery time after deployment deletion..."
   require_deployment
 
   kubectl delete deployment "${APP_NAME}" -n "${NAMESPACE}" --wait=true --timeout=90s >/dev/null
@@ -294,7 +409,87 @@ measure_rollback() {
     sleep "${POLL_INTERVAL}"
   done
 
-  fail "rollback did not recreate deployment/${APP_NAME} within ${TIMEOUT}s"
+  fail "deletion recovery did not recreate deployment/${APP_NAME} within ${TIMEOUT}s"
+  return 1
+}
+
+measure_commit_to_ready() {
+  log "Measuring commit→ready (image tag bump on local git server)..."
+  require_deployment
+
+  if [ -z "${BENCH_GIT_URL:-}" ] || [ ! -d "${BENCH_GIT_SRC:-/nonexistent}" ]; then
+    setup_bench_git_server "$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  fi
+
+  local target_image=nginx:1.26-alpine
+  local current_image
+  current_image=$(deployment_image)
+  if [ "${current_image}" = "${target_image}" ]; then
+    target_image=nginx:1.27-alpine
+  fi
+
+  # Point the tool at the local git server (both stay warm; only the commit is new)
+  if [ "${GITOPS_TOOL}" = "argocd" ]; then
+    ensure_argocd_http_repo "${BENCH_GIT_URL}"
+    create_argocd_application "${BENCH_GIT_URL}" "main" >/dev/null
+    # Wait until Argo is synced to local baseline before committing the change
+    local warm_deadline=$(( $(date +%s) + TIMEOUT ))
+    while true; do
+      local sync health
+      sync=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
+      health=$(kubectl get application "${APP_NAME}" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
+      if [ "${sync}" = "Synced" ] && [ "${health}" = "Healthy" ] && deployment_available; then
+        break
+      fi
+      if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
+        fail "Argo CD did not sync to local git baseline before commit timing"
+        return 1
+      fi
+      sleep "${POLL_INTERVAL}"
+    done
+  else
+    patch_flux_gitrepository "${BENCH_GIT_URL}"
+    create_flux_kustomization >/dev/null
+    local warm_deadline=$(( $(date +%s) + TIMEOUT ))
+    while true; do
+      local ready_status
+      ready_status=$(kubectl get kustomization flux-nginx-app -n flux-system \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+      if [ "${ready_status}" = "True" ] && deployment_available; then
+        break
+      fi
+      if [ "$(date +%s)" -ge "${warm_deadline}" ]; then
+        fail "Flux did not sync to local git baseline before commit timing"
+        return 1
+      fi
+      sleep "${POLL_INTERVAL}"
+    done
+  fi
+
+  # Commit image tag change for the relevant app path
+  if [ "${GITOPS_TOOL}" = "argocd" ]; then
+    sed -i "s|image: nginx:.*|image: ${target_image}|" \
+      "${BENCH_GIT_SRC}/apps/argocd/nginx/deployment.yaml"
+  else
+    sed -i "s|image: nginx:.*|image: ${target_image}|" \
+      "${BENCH_GIT_SRC}/apps/flux/nginx/deployment.yaml"
+  fi
+  bench_git_commit "bench: set image ${target_image}"
+
+  local start_time
+  start_time=$(now)
+  while [ "$(elapsed_int "${start_time}")" -lt "${TIMEOUT}" ]; do
+    local img
+    img=$(deployment_image)
+    if [ "${img}" = "${target_image}" ] && deployment_available; then
+      elapsed_since "${start_time}"
+      return 0
+    fi
+    sleep "${POLL_INTERVAL}"
+  done
+
+  log "desired image=${target_image} observed=$(deployment_image)"
+  fail "commit→ready did not converge to ${target_image} within ${TIMEOUT}s"
   return 1
 }
 
@@ -304,15 +499,20 @@ assert_ready_credible "${time_to_ready}"
 time_to_heal=$(measure_self_heal)
 assert_numeric "time_to_heal" "${time_to_heal}"
 
-time_to_rollback=$(measure_rollback)
-assert_numeric "time_to_rollback" "${time_to_rollback}"
+time_to_deletion_recovery=$(measure_deletion_recovery)
+assert_numeric "time_to_deletion_recovery" "${time_to_deletion_recovery}"
+
+time_to_commit_ready=$(measure_commit_to_ready)
+assert_numeric "time_to_commit_ready" "${time_to_commit_ready}"
+awk -v v="${time_to_commit_ready}" 'BEGIN { exit (v > 0 ? 0 : 1) }' \
+  || fail "time_to_commit_ready=${time_to_commit_ready}s is not credible"
 
 log ""
-log "Results:"
+log "Results (profile=${BENCHMARK_PROFILE}):"
 log "  Time to Ready: ${time_to_ready}s"
 log "  Time to Self-Heal: ${time_to_heal}s"
-log "  Time to Rollback: ${time_to_rollback}s"
+log "  Time to Deletion Recovery: ${time_to_deletion_recovery}s"
+log "  Time to Commit→Ready: ${time_to_commit_ready}s"
 log ""
 
-# Sole stdout line — consumed by callers
-echo "${time_to_ready},${time_to_heal},${time_to_rollback}"
+echo "${time_to_ready},${time_to_heal},${time_to_deletion_recovery},${time_to_commit_ready}"

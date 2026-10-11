@@ -303,7 +303,7 @@ Full comparison notes: [docs/results.md](docs/results.md)
 
 ## Results
 
-Measured in CI (not estimates). Table values are taken from the latest uploaded `docs/results.json` artifact and linked to that Actions run.
+Measured in CI (not estimates). Table values are taken from the latest uploaded `docs/results.json` artifact and linked to that Actions run. Benchmarks use N=3 samples (median/min/max), `equal-10s` and `defaults` reconcile profiles, plus commit→ready — see [docs/results.md](docs/results.md).
 
 | Tool | Time to Ready | Time to Self-Heal | Time to Rollback | Source |
 |------|---------------|-------------------|------------------|--------|
