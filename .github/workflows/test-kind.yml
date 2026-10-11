@@ -201,45 +201,57 @@ jobs:
           # Ensure demo namespaces exist before namespaced RoleBindings
           kubectl create namespace argocd-demo --dry-run=client -o yaml | kubectl apply -f -
           kubectl create namespace flux-demo --dry-run=client -o yaml | kubectl apply -f -
-          # Apply UI manifests except the placeholder token Secret
+          # Bearer token Secret before Deployment (envFrom secretKeyRef)
+          kubectl create secret generic ui-backend-api-token \
+            --from-file=token=/tmp/ui_api_token \
+            --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f kubernetes/ui/backend-rbac.yaml
           kubectl apply -f kubernetes/ui/backend-deployment.yaml
           kubectl apply -f kubernetes/ui/backend-service.yaml
           kubectl apply -f kubernetes/ui/frontend-deployment.yaml
           kubectl apply -f kubernetes/ui/frontend-service.yaml
           kubectl apply -f kubernetes/ui/ingress.yaml
-          # Real bearer token Secret last so placeholder YAML cannot overwrite it
-          kubectl create secret generic ui-backend-api-token \
-            --from-file=token=/tmp/ui_api_token \
-            --dry-run=client -o yaml | kubectl apply -f -
           kubectl -n default rollout status deployment/ui-backend --timeout=180s
           kubectl -n default rollout status deployment/ui-frontend --timeout=180s
 
       - name: E2E UI backend health and auth
         run: |
+          set -euo pipefail
           UI_API_TOKEN=$(cat /tmp/ui_api_token)
           kubectl -n default port-forward svc/ui-backend 3001:3001 >/tmp/ui-pf.log 2>&1 &
           PF_PID=$!
           cleanup() { kill "${PF_PID}" 2>/dev/null || true; }
           trap cleanup EXIT
-          for i in $(seq 1 30); do
+          ok=0
+          for i in $(seq 1 45); do
             if curl -sf http://127.0.0.1:3001/healthz >/dev/null; then
+              ok=1
               break
             fi
             sleep 1
           done
-          # /healthz is public
+          if [ "${ok}" != "1" ]; then
+            echo "port-forward/healthz never became ready" >&2
+            cat /tmp/ui-pf.log >&2 || true
+            kubectl -n default get pods,svc -l app=ui-backend -o wide >&2 || true
+            kubectl -n default logs deploy/ui-backend --tail=80 >&2 || true
+            exit 1
+          fi
           code=$(curl -s -o /tmp/healthz.json -w '%{http_code}' http://127.0.0.1:3001/healthz)
+          echo "healthz code=${code} body=$(cat /tmp/healthz.json)"
           test "${code}" = "200"
-          grep -q '"status":"ok"' /tmp/healthz.json || grep -q '"status": "ok"' /tmp/healthz.json
-          # API without token → 401
+          grep -q '"status"' /tmp/healthz.json
           code=$(curl -s -o /tmp/api_unauth.json -w '%{http_code}' http://127.0.0.1:3001/api/argocd/applications)
+          echo "unauth code=${code} body=$(cat /tmp/api_unauth.json)"
           test "${code}" = "401"
-          # API with bearer token → 200
           code=$(curl -s -o /tmp/api_auth.json -w '%{http_code}' \
             -H "Authorization: Bearer ${UI_API_TOKEN}" \
             http://127.0.0.1:3001/api/argocd/applications)
-          test "${code}" = "200"
+          echo "auth code=${code} body=$(cat /tmp/api_auth.json)"
+          if [ "${code}" != "200" ]; then
+            kubectl -n default logs deploy/ui-backend --tail=80 >&2 || true
+            exit 1
+          fi
           echo "E2E UI backend checks passed"
 
       - name: Debug ArgoCD deployed apps

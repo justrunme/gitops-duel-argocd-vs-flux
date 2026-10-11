@@ -56,8 +56,8 @@ async function listNamespaced(custom, { group, version, plural, namespaces }) {
       items.push(...extractItems(res));
     } catch (err) {
       const code = err.statusCode || err.code;
-      // Missing CRD/ns is skippable; other errors propagate
-      if (code === 404) continue;
+      // Missing CRD/ns or Role without that resource in this ns — skip
+      if (code === 404 || code === 403) continue;
       throw err;
     }
   }

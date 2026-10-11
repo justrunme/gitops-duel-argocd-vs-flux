@@ -1,17 +1,225 @@
 {
   "repo": "gitops-duel-argocd-vs-flux",
-  "source_run": "https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38090813003",
-  "measured_at": "2026-10-10T22:21:03Z",
+  "source_run": "https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38129173686",
+  "measured_at": "2026-10-11T10:14:55Z",
+  "samples_per_metric": 3,
+  "primary_profile": "equal-10s",
+  "profiles": {
+    "defaults": {
+      "intervals": {
+        "argocd_reconciliation": "180s",
+        "flux_interval": "1m",
+        "notes": "Argo stock timeout.reconciliation=180s; Flux interval=1m is a CI-bounded stand-in (stock Flux Kustomization default is 10m)."
+      },
+      "metrics": {
+        "Argo CD": {
+          "time_to_ready_seconds": {
+            "median": "4.167",
+            "min": "3.560",
+            "max": "4.170",
+            "samples": [
+              "3.560",
+              "4.167",
+              "4.170"
+            ],
+            "n": 3
+          },
+          "time_to_self_heal_seconds": {
+            "median": "3.316",
+            "min": "3.312",
+            "max": "3.917",
+            "samples": [
+              "3.316",
+              "3.917",
+              "3.312"
+            ],
+            "n": 3
+          },
+          "time_to_deletion_recovery_seconds": {
+            "median": "3.490",
+            "min": "3.483",
+            "max": "4.143",
+            "samples": [
+              "4.143",
+              "3.490",
+              "3.483"
+            ],
+            "n": 3
+          },
+          "time_to_commit_ready_seconds": {
+            "median": "183.890",
+            "min": "176.438",
+            "max": "358.543",
+            "samples": [
+              "176.438",
+              "183.890",
+              "358.543"
+            ],
+            "n": 3
+          }
+        },
+        "Flux": {
+          "time_to_ready_seconds": {
+            "median": "6.451",
+            "min": "6.440",
+            "max": "6.480",
+            "samples": [
+              "6.451",
+              "6.440",
+              "6.480"
+            ],
+            "n": 3
+          },
+          "time_to_self_heal_seconds": {
+            "median": "61.267",
+            "min": "60.727",
+            "max": "62.460",
+            "samples": [
+              "62.460",
+              "61.267",
+              "60.727"
+            ],
+            "n": 3
+          },
+          "time_to_deletion_recovery_seconds": {
+            "median": "119.841",
+            "min": "119.729",
+            "max": "120.076",
+            "samples": [
+              "119.841",
+              "119.729",
+              "120.076"
+            ],
+            "n": 3
+          },
+          "time_to_commit_ready_seconds": {
+            "median": "52.755",
+            "min": "51.435",
+            "max": "58.885",
+            "samples": [
+              "52.755",
+              "58.885",
+              "51.435"
+            ],
+            "n": 3
+          }
+        }
+      }
+    },
+    "equal-10s": {
+      "intervals": {
+        "argocd_reconciliation": "10s",
+        "flux_interval": "10s",
+        "notes": "Equal polling/reconcile interval for a fair head-to-head."
+      },
+      "metrics": {
+        "Argo CD": {
+          "time_to_ready_seconds": {
+            "median": "4.191",
+            "min": "3.627",
+            "max": "4.205",
+            "samples": [
+              "4.191",
+              "3.627",
+              "4.205"
+            ],
+            "n": 3
+          },
+          "time_to_self_heal_seconds": {
+            "median": "3.384",
+            "min": "3.321",
+            "max": "3.926",
+            "samples": [
+              "3.926",
+              "3.321",
+              "3.384"
+            ],
+            "n": 3
+          },
+          "time_to_deletion_recovery_seconds": {
+            "median": "3.540",
+            "min": "2.867",
+            "max": "4.195",
+            "samples": [
+              "3.540",
+              "2.867",
+              "4.195"
+            ],
+            "n": 3
+          },
+          "time_to_commit_ready_seconds": {
+            "median": "16.083",
+            "min": "14.236",
+            "max": "16.579",
+            "samples": [
+              "16.579",
+              "16.083",
+              "14.236"
+            ],
+            "n": 3
+          }
+        },
+        "Flux": {
+          "time_to_ready_seconds": {
+            "median": "6.456",
+            "min": "6.432",
+            "max": "6.489",
+            "samples": [
+              "6.456",
+              "6.489",
+              "6.432"
+            ],
+            "n": 3
+          },
+          "time_to_self_heal_seconds": {
+            "median": "13.050",
+            "min": "12.420",
+            "max": "13.080",
+            "samples": [
+              "12.420",
+              "13.080",
+              "13.050"
+            ],
+            "n": 3
+          },
+          "time_to_deletion_recovery_seconds": {
+            "median": "70.335",
+            "min": "69.950",
+            "max": "70.444",
+            "samples": [
+              "70.444",
+              "69.950",
+              "70.335"
+            ],
+            "n": 3
+          },
+          "time_to_commit_ready_seconds": {
+            "median": "8.734",
+            "min": "3.589",
+            "max": "9.242",
+            "samples": [
+              "9.242",
+              "3.589",
+              "8.734"
+            ],
+            "n": 3
+          }
+        }
+      }
+    }
+  },
   "metrics": {
     "Argo CD": {
-      "time_to_ready_seconds": "4.695",
-      "time_to_self_heal_seconds": "3.156",
-      "time_to_rollback_seconds": "4.621"
+      "time_to_ready_seconds": "4.191",
+      "time_to_self_heal_seconds": "3.384",
+      "time_to_deletion_recovery_seconds": "3.540",
+      "time_to_commit_ready_seconds": "16.083"
     },
     "Flux": {
-      "time_to_ready_seconds": "6.803",
-      "time_to_self_heal_seconds": "13.326",
-      "time_to_rollback_seconds": "69.040"
+      "time_to_ready_seconds": "6.456",
+      "time_to_self_heal_seconds": "13.050",
+      "time_to_deletion_recovery_seconds": "70.335",
+      "time_to_commit_ready_seconds": "8.734"
     }
   }
 }
