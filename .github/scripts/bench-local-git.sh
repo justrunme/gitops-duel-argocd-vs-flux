@@ -134,13 +134,10 @@ cleanup_bench_git_branch() {
     delete_remote_ref "refs/heads/ci/bench-${GITHUB_RUN_ID}"
   fi
 
-  # Sweep leftovers: legacy ci-bench/* and any ci/bench-* for this run / orphans
+  # Sweep only legacy ci-bench/* leftovers. Do not delete other runs' ci/bench-* refs.
   if [ -n "${GITHUB_REPOSITORY:-}" ]; then
     local ref
     for ref in $(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/ci-bench" --jq '.[].ref' 2>/dev/null || true); do
-      delete_remote_ref "${ref}"
-    done
-    for ref in $(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/ci/bench-" --jq '.[].ref' 2>/dev/null || true); do
       delete_remote_ref "${ref}"
     done
   fi

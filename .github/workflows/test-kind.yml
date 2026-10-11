@@ -285,8 +285,8 @@ jobs:
         run: |
           chmod +x .github/scripts/bench-local-git.sh
           bash .github/scripts/bench-local-git.sh cleanup
-          # Extra sweep for any legacy ci-bench/* leftovers
-          for ref in $(git ls-remote --heads origin 'ci-bench/*' 'ci/bench-*' | awk '{print $2}'); do
+          # Extra sweep for legacy ci-bench/* only (never mass-delete ci/bench-* of other runs)
+          for ref in $(git ls-remote --heads origin 'ci-bench/*' | awk '{print $2}'); do
             branch=${ref#refs/heads/}
             echo "Deleting leftover ${branch}"
             git push origin --delete "${branch}" || true

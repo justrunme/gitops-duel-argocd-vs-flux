@@ -65,8 +65,9 @@ TMPDIR_BENCH=$(mktemp -d)
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/bench-local-git.sh"
 cleanup_all() {
+  # Only local temp files here. Remote ci/bench-* cleanup must wait until after
+  # Simulate ArgoCD/Flux steps (workflow "Cleanup temporary bench branches").
   rm -rf "${TMPDIR_BENCH}"
-  cleanup_bench_git_branch || true
 }
 trap cleanup_all EXIT
 
@@ -183,6 +184,60 @@ YAML
   printf '%s\n' "${argo_json}" >"docs/bench-raw/${profile}-argocd.json"
   printf '%s\n' "${flux_json}" >"docs/bench-raw/${profile}-flux.json"
 done
+
+
+# Leave controllers on the CI-tracked branch so post-benchmark Simulate steps
+# can self-heal without depending on the temporary ci/bench-* ref.
+restore_ci_sources() {
+  local cold_repo="${TF_VAR_git_repository_url:-https://github.com/justrunme/gitops-duel-argocd-vs-flux.git}"
+  local cold_rev="${TF_VAR_git_branch:-${GITHUB_REF_NAME:-main}}"
+  echo "Restoring controllers to ${cold_repo} @ ${cold_rev}" >&2
+  if kubectl get application nginx-app -n argocd >/dev/null 2>&1; then
+    cat <<YAML | kubectl apply -f - >/dev/null
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ${cold_repo}
+    targetRevision: ${cold_rev}
+    path: apps/argocd/nginx
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${ARGO_NS}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+YAML
+  fi
+  if kubectl get gitrepository local-repo -n flux-system >/dev/null 2>&1; then
+    cat <<YAML | kubectl apply -f - >/dev/null
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: local-repo
+  namespace: flux-system
+spec:
+  interval: 10s
+  timeout: 60s
+  url: ${cold_repo}
+  ref:
+    branch: ${cold_rev}
+YAML
+  fi
+  # Give controllers a moment to reconcile desired state before Simulate steps
+  sleep 5
+  kubectl wait --for=condition=available deployment/nginx-app -n "${ARGO_NS}" --timeout=180s >/dev/null 2>&1 || true
+  kubectl wait --for=condition=available deployment/nginx-app -n "${FLUX_NS}" --timeout=180s >/dev/null 2>&1 || true
+}
+restore_ci_sources
 
 {
   echo "Run date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
