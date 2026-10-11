@@ -440,12 +440,18 @@ measure_commit_to_ready() {
   fi
   log "commit→ready baseline=${baseline_image} target=${target_image}"
 
+  # Ensure the temporary branch exists on the remote before controllers poll it.
+  # (Cold-start may have pointed Flux/Argo away from it; never leave a dangling ref.)
+  ensure_bench_branch_pushed
+
   # Retarget to the temporary HTTPS GitHub branch
   if [ "${GITOPS_TOOL}" = "argocd" ]; then
     create_argocd_application "${BENCH_GIT_URL}" "${BENCH_GIT_BRANCH}" >/dev/null
   else
     local interval
     interval=$(profile_flux_interval)
+    # Recreate the GitRepository so status/artifact cannot stick to the CI branch.
+    kubectl -n flux-system delete gitrepository local-repo --ignore-not-found --wait=true --timeout=60s >/dev/null
     cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository

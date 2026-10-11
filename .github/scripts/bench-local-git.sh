@@ -34,6 +34,24 @@ configure_push_remote() {
   git -C "${BENCH_GIT_SRC}" remote add origin "https://x-access-token:${token}@github.com/${path}"
 }
 
+ensure_bench_branch_pushed() {
+  require_push_token
+  if [ ! -d "${BENCH_GIT_SRC}/.git" ]; then
+    log "ERROR: bench git src missing; call setup first"
+    return 1
+  fi
+  # Force-publish current HEAD so Flux/Argo can always resolve the ref.
+  git -C "${BENCH_GIT_SRC}" push origin "HEAD:refs/heads/${BENCH_GIT_BRANCH}" --force >/dev/null
+  local url=${BENCH_GIT_URL%.git}.git
+  local path=${url#https://github.com/}
+  local token=${GITHUB_TOKEN:-${GH_TOKEN}}
+  if ! git ls-remote "https://x-access-token:${token}@github.com/${path}" "refs/heads/${BENCH_GIT_BRANCH}" | grep -q .; then
+    log "ERROR: refs/heads/${BENCH_GIT_BRANCH} not visible after push"
+    return 1
+  fi
+  log "bench-git ref verified: refs/heads/${BENCH_GIT_BRANCH}"
+}
+
 bench_git_commit() {
   local message=$1
   require_push_token
@@ -51,6 +69,7 @@ bench_git_commit() {
       commit -m "${message} [skip ci]" >/dev/null
     git push origin "HEAD:refs/heads/${BENCH_GIT_BRANCH}" >/dev/null
   )
+  ensure_bench_branch_pushed
 }
 
 setup_bench_git_server() {
