@@ -127,6 +127,7 @@ jobs:
             docs/bench-raw/**
             docs/assets/gitops-duel.cast
             docs/assets/gitops-duel.svg
+          if-no-files-found: error
       - name: Cleanup temporary bench branches
         if: always()
         env:

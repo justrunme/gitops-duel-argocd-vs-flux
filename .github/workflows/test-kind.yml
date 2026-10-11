@@ -39,8 +39,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: ui-backend-unit
     permissions:
-      # write on push and same-repo PRs (ci/bench-* commit→ready); read-only for forks
-      contents: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'write' || 'read' }}
+      # write required for temporary ci/bench-* branches (commit→ready). Unit job stays read-only.
+      contents: write
       actions: read
       checks: read
     env:
