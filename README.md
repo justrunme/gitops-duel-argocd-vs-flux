@@ -150,9 +150,24 @@ To run this project locally, you'll need:
 
 6.  **Deploy the UI to Kubernetes:**
 
+    Create the API token Secret first (do not commit the value), then apply manifests:
+
     ```bash
-    kubectl apply -f kubernetes/ui/
+    kubectl create secret generic ui-backend-api-token \
+      --from-literal=token="$(openssl rand -hex 24)" \
+      -n default
+
+    kubectl apply -f kubernetes/ui/backend-rbac.yaml
+    kubectl apply -f kubernetes/ui/backend-deployment.yaml
+    kubectl apply -f kubernetes/ui/backend-service.yaml
+    kubectl apply -f kubernetes/ui/frontend-deployment.yaml
+    kubectl apply -f kubernetes/ui/frontend-service.yaml
+    kubectl apply -f kubernetes/ui/ingress.yaml
     ```
+
+    The frontend nginx injects `Authorization` on `/api/*` from that Secret so the
+    browser never holds the token. Details: [kubernetes/ui/README.md](kubernetes/ui/README.md),
+    [SECURITY.md](SECURITY.md).
 
 ### Accessing the Dashboards and UI
 

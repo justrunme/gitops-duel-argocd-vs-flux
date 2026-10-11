@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ui-frontend
-  namespace: default # Или другое пространство имен
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -18,3 +18,30 @@ spec:
         image: justrunme/gitops-duel-ui-frontend:ci-placeholder
         ports:
         - containerPort: 80
+        env:
+        # Same Secret as the backend; nginx injects Authorization on /api/*
+        # so the browser never receives the token.
+        - name: UI_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ui-backend-api-token
+              key: token
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
