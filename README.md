@@ -318,14 +318,14 @@ Full comparison notes: [docs/results.md](docs/results.md)
 
 ## Results
 
-Measured in CI (not estimates). Table values are taken from the latest uploaded `docs/results.json` artifact and linked to that Actions run. Benchmarks use N=3 samples (median/min/max), `equal-10s` and `defaults` reconcile profiles, plus commit→ready — see [docs/results.md](docs/results.md).
+Median times (**N=3**) on this setup from the `equal-10s` profile: both Argo CD `timeout.reconciliation` and Flux `interval` are set to **10s** for a fair head-to-head. Values are taken from [`docs/results.json`](docs/results.json); source run [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035).
 
-| Tool | Time to Ready | Time to Self-Heal | Time to Rollback | Source |
-|------|---------------|-------------------|------------------|--------|
-| Argo CD | 4.695s | 3.156s | 4.621s | [38090813003](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38090813003) |
-| Flux | 6.803s | 13.326s | 69.040s | same |
+| Tool | Time to Ready | Time to Self-Heal | Time to Deletion Recovery | Source |
+|------|---------------|-------------------|---------------------------|--------|
+| Argo CD | 3.759s | 3.666s | 3.130s | [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035) |
+| Flux | 6.167s | 12.767s | 70.208s | same |
 
-Values are copied from the CI artifact (not estimates). Details: [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
+Details (including the `defaults` profile and commit→ready): [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
 
 
 ## 📸 Screenshots
