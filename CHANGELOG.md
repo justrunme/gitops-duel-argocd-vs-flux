@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-20
+
+Includes `docs/EVIDENCE.md` and `docs/results.json` in a tagged release; ui-backend package version 1.0.1.
+
 ### Security
 - ui-backend: remove shell/`exec` request paths; read Argo/Flux CRDs via `@kubernetes/client-node`
 - Validate DNS-1123 names, namespace/repo/path allowlists; restrict CORS; add helmet + rate limiting
