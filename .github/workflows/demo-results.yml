@@ -16,6 +16,10 @@ on:
       - "main.tf"
       - "variables.tf"
 
+concurrency:
+  group: demo-results-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gitops-benchmark:
     runs-on: ubuntu-latest
@@ -32,7 +36,7 @@ jobs:
       FLUX_TARGET_NAMESPACE: flux-demo
       BENCHMARK_SAMPLES: "3"
       BENCHMARK_PROFILES: "equal-10s,defaults"
-      BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
+      BENCH_GIT_BRANCH: ci/bench-demo-${{ github.run_id }}-${{ github.run_attempt }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
@@ -50,13 +54,18 @@ jobs:
       - name: Install CLIs and recorders
         run: |
           curl -s https://fluxcd.io/install.sh | sudo bash
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.1.8/argocd-linux-amd64
           chmod +x argocd && sudo mv argocd /usr/local/bin/
           python -m pip install asciinema
           npm install -g svg-term-cli
       - name: Show GitOps source revision
         run: |
           echo "Tracking repo=${TF_VAR_git_repository_url} branch=${TF_VAR_git_branch}"
+      - name: Preload Argo CD images into kind
+        env:
+          ARGOCD_CHART_VERSION: "9.0.0"
+        run: bash .github/scripts/preload-kind-images.sh
+
       - name: Terraform apply core
         run: |
           terraform init
@@ -132,13 +141,8 @@ jobs:
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BENCH_GIT_BRANCH: ci/bench-${{ github.run_id }}
+          BENCH_GIT_BRANCH: ci/bench-demo-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           chmod +x .github/scripts/bench-local-git.sh
           bash .github/scripts/bench-local-git.sh cleanup
-          for ref in $(git ls-remote --heads origin 'ci-bench/*' 'ci/bench-*' | awk '{print $2}'); do
-            branch=${ref#refs/heads/}
-            echo "Deleting leftover ${branch}"
-            git push origin --delete "${branch}" || true
-          done
 
