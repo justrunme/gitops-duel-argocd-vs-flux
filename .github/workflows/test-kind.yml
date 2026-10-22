@@ -121,10 +121,6 @@ jobs:
           flux get all -A
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
 
-      - name: Argo CD diagnostics
-        if: failure()
-        run: bash .github/scripts/argocd-diagnostics.sh
-
       - name: Run Performance Benchmarks
         id: benchmark
         run: |

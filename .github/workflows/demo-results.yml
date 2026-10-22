@@ -74,9 +74,6 @@ jobs:
           terraform apply -auto-approve
           kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
-      - name: Argo CD diagnostics
-        if: failure()
-        run: bash .github/scripts/argocd-diagnostics.sh
       - name: Record benchmarks
         run: |
           mkdir -p docs/assets
