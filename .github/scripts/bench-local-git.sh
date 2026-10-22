@@ -147,6 +147,8 @@ delete_remote_ref() {
   local token=${GITHUB_TOKEN:-${GH_TOKEN}}
 
   log "Deleting remote branch ${branch} via API"
+  # Encode '/' in branch names (ci/bench-...) so the API path is unambiguous.
+  local encoded_branch=${branch//\//%2F}
   local http_code body
   body=$(mktemp)
   http_code=$(curl -sS -o "${body}" -w "%{http_code}" \
@@ -154,7 +156,7 @@ delete_remote_ref() {
     -H "Authorization: Bearer ${token}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}")
+    "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded_branch}")
   case "${http_code}" in
     204|200)
       rm -f "${body}"
@@ -162,7 +164,20 @@ delete_remote_ref() {
       ;;
     404)
       rm -f "${body}"
-      log "refs/heads/${branch} already absent (404)"
+      log "refs/heads/${branch} already absent (${http_code})"
+      ;;
+    422)
+      # GitHub git-refs DELETE returns 422 {"message":"Reference does not exist"}
+      # when the branch is already gone — same outcome as 404.
+      if grep -qi 'Reference does not exist' "${body}" 2>/dev/null; then
+        rm -f "${body}"
+        log "refs/heads/${branch} already absent (${http_code})"
+      else
+        log "ERROR: deleting refs/heads/${branch} failed with HTTP ${http_code}"
+        cat "${body}" >&2 || true
+        rm -f "${body}"
+        return 1
+      fi
       ;;
     *)
       log "ERROR: deleting refs/heads/${branch} failed with HTTP ${http_code}"
