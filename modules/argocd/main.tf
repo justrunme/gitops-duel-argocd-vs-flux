@@ -76,6 +76,14 @@ resource "helm_release" "argocd" {
           imagePullPolicy = "IfNotPresent"
         }
       }
+      # The chart default (ecr-public.aws.com) rate-limits anonymous pulls from
+      # shared CI runner IPs ("toomanyrequests: Data limit exceeded").
+      redis = {
+        image = {
+          repository = "mirror.gcr.io/library/redis"
+          tag        = "7.2.11-alpine"
+        }
+      }
       configs = {
         params = {
           "server.insecure" = true

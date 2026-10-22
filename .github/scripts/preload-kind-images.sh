@@ -7,6 +7,8 @@ CLUSTER="${KIND_CLUSTER_NAME:-kind}"
 
 mapfile -t images < <(helm template argocd argo-cd \
   --repo https://argoproj.github.io/argo-helm --version "${CHART_VERSION}" \
+  --set redis.image.repository=mirror.gcr.io/library/redis \
+  --set redis.image.tag=7.2.11-alpine \
   | awk '$1 == "image:" {gsub(/"/, "", $2); print $2}' | sort -u)
 [ "${#images[@]}" -gt 0 ] || { echo "no images found in argo-cd ${CHART_VERSION}" >&2; exit 1; }
 
