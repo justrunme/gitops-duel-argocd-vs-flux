@@ -57,14 +57,24 @@ resource "helm_release" "argocd" {
   version    = var.argocd_version
   depends_on = [kubernetes_namespace.argocd]
 
+  # Images are preloaded into kind; wait for every workload and hook job to be
+  # ready with enough headroom for a loaded shared runner.
+  wait          = true
+  wait_for_jobs = true
+  timeout       = 600
+  atomic        = false
+
   values = [
     yamlencode({
-      global = {
-        domain = "argocd.local"
-      }
       crds = {
         install = true
         keep    = true
+      }
+      global = {
+        domain = "argocd.local"
+        image = {
+          imagePullPolicy = "IfNotPresent"
+        }
       }
       configs = {
         params = {

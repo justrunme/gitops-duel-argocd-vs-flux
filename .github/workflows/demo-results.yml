@@ -50,13 +50,18 @@ jobs:
       - name: Install CLIs and recorders
         run: |
           curl -s https://fluxcd.io/install.sh | sudo bash
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.1.8/argocd-linux-amd64
           chmod +x argocd && sudo mv argocd /usr/local/bin/
           python -m pip install asciinema
           npm install -g svg-term-cli
       - name: Show GitOps source revision
         run: |
           echo "Tracking repo=${TF_VAR_git_repository_url} branch=${TF_VAR_git_branch}"
+      - name: Preload Argo CD images into kind
+        env:
+          ARGOCD_CHART_VERSION: "9.0.0"
+        run: bash .github/scripts/preload-kind-images.sh
+
       - name: Terraform apply core
         run: |
           terraform init
@@ -69,6 +74,9 @@ jobs:
           terraform apply -auto-approve
           kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=360s
           kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=300s
+      - name: Argo CD diagnostics
+        if: failure()
+        run: bash .github/scripts/argocd-diagnostics.sh
       - name: Record benchmarks
         run: |
           mkdir -p docs/assets
