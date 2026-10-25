@@ -9,6 +9,9 @@ concurrency:
   group: test-kind-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   ui-backend-unit:
     runs-on: ubuntu-latest
@@ -19,9 +22,9 @@ jobs:
         working-directory: ui-backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
@@ -43,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: ui-backend-unit
     permissions:
-      # write required for temporary ci/bench-duel-* branches (commit→ready). Unit job stays read-only.
+      # Temporary ci/bench-duel-* branches for commit→ready benchmark
       contents: write
       actions: read
       checks: read
@@ -60,30 +63,43 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: true
 
       - name: Setup KinD
-        uses: helm/kind-action@v1.15.1
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:
           cluster_name: kind
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.9.8
           terraform_wrapper: false
 
       - name: Install Flux CLI
+        env:
+          FLUX_VERSION: "2.9.6"
+          # From https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_checksums.txt
+          FLUX_SHA256: "b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5"
         run: |
-          curl -s https://fluxcd.io/install.sh | sudo bash
+          curl -sSL -o flux.tar.gz "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          echo "${FLUX_SHA256}  flux.tar.gz" | sha256sum -c -
+          tar -xzf flux.tar.gz flux
+          sudo install -m 0755 flux /usr/local/bin/flux
+          rm -f flux.tar.gz flux
           flux --version
 
       - name: Install ArgoCD CLI
+        env:
+          ARGOCD_VERSION: "3.1.8"
+          # From https://github.com/argoproj/argo-cd/releases/download/v3.1.8/cli_checksums.txt
+          ARGOCD_SHA256: "bfc45149df6dc8408cee3c1c66e865adde1439d8f419657513b56704d73f1e4d"
         run: |
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.1.8/argocd-linux-amd64
+          curl -sSL -o argocd "https://github.com/argoproj/argo-cd/releases/download/v${ARGOCD_VERSION}/argocd-linux-amd64"
+          echo "${ARGOCD_SHA256}  argocd" | sha256sum -c -
           chmod +x argocd
           sudo mv argocd /usr/local/bin/
 
@@ -397,7 +413,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gitops-benchmark-results
           path: |
