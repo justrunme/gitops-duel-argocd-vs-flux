@@ -61,7 +61,7 @@ Read more:
 - [Argo CD vs Flux](https://justrunme.com/guides/argocd-vs-flux/)
 - [GitOps on Kubernetes](https://justrunme.com/kubernetes-gitops/)
 
-Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
+Site: [justrunme.com](https://justrunme.com/) · Author: Andrey Lesnikov, Senior DevOps & AI Platform Engineer, [https://orcid.org/0009-0004-7583-4314](https://orcid.org/0009-0004-7583-4314)
 
 ![GitOps Duel CI](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/workflows/test-kind.yml/badge.svg)
 
