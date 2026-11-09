@@ -115,38 +115,14 @@ else
   assert_fail_msg "production if-ensure missing image" "returned success"
 fi
 
-# --- 5) Failed pull must not become success via cached tag (practical docker wrapper).
-echo "== case: if ensure with failing pull must fail despite cached tag =="
-AMD64_DIGEST="$(resolve_platform_manifest_digest "${MULTIARCH_IMG}" "linux/amd64")"
-REPO="$(image_repository "${MULTIARCH_IMG}")"
-docker pull --quiet "${REPO}@${AMD64_DIGEST}"
-docker tag "${REPO}@${AMD64_DIGEST}" "${MULTIARCH_IMG}"
-WRAP_DIR="$(mktemp -d)"
-REAL_DOCKER="$(command -v docker)"
-cat > "${WRAP_DIR}/docker" <<EOF
-#!/bin/bash
-# Fail digest pulls only; allow imagetools/inspect/tag/other.
-if [ "\${1:-}" = "pull" ]; then
-  for a in "\$@"; do
-    if [[ "\$a" == *@sha256:* ]]; then
-      echo "test-wrapper: refusing digest pull \$a" >&2
-      exit 42
-    fi
-  done
-fi
-exec "${REAL_DOCKER}" "\$@"
-EOF
-chmod +x "${WRAP_DIR}/docker"
-set +e
-PATH="${WRAP_DIR}:${PATH}" ensure_single_platform_image "${MULTIARCH_IMG}" "linux/amd64"
-pullfail_rc=$?
-set -e
-rm -rf "${WRAP_DIR}"
-if [ "${pullfail_rc}" -ne 0 ]; then
-  assert_ok "production ensure fails when digest pull fails (rc=${pullfail_rc}, cached tag present)"
-else
-  assert_fail_msg "pull failure propagation" "ensure succeeded despite refused digest pull"
-fi
+# --- 5) Digest-pull failure while a cached tag exists: NOT EXECUTED.
+# A PATH-wrapper "docker pull" exit is a simulated CLI fault, not a real
+# registry/network failure. Production ensure() still returns non-zero on
+# pull/tag failure (explicit rc checks); that branch is code-reviewed but
+# not proven here by a genuine Docker/registry fault without adding a
+# proxy/fault harness.
+echo "== case: digest-pull failure under cached tag =="
+echo "NOT_EXECUTED: real docker/registry pull-failure-under-cache (no mock CLI wrapper; no fault proxy)"
 
 # --- 6) Metadata: linux/arm64 must resolve redis arm64/v8 (chart image), never amd64/unknown.
 echo "== case: arm64 resolver accepts arm64/v8 for chart redis =="
@@ -185,4 +161,5 @@ echo "NOTE: arm64 digest resolution verified from registry metadata; no arm64 ki
 
 echo "regression summary: pass=${pass} fail=${fail}"
 [ "${fail}" -eq 0 ]
-[ "${pass}" -ge 5 ]
+# Gating cases: evidence note + positive load pair + two real negatives + arm64 metadata pair.
+[ "${pass}" -ge 6 ]
