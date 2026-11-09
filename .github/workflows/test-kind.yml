@@ -107,9 +107,15 @@ jobs:
         run: |
           echo "Tracking repo=${TF_VAR_git_repository_url} branch=${TF_VAR_git_branch}"
 
+      - name: Regression - kind image preload platform import
+        env:
+          KIND_CLUSTER_NAME: kind
+        run: bash .github/scripts/test-kind-image-preload.sh
+
       - name: Preload Argo CD images into kind
         env:
           ARGOCD_CHART_VERSION: "9.0.0"
+          KIND_CLUSTER_NAME: kind
         run: bash .github/scripts/preload-kind-images.sh
 
       - name: Terraform Init
