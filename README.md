@@ -18,6 +18,17 @@ Case study: [GitOps: Argo CD & Flux](https://justrunme.com/cases/gitops-argocd-f
 - Runs Kind-based CI that measures sync/self-heal/rollback behavior and error simulation
 - Ships a small UI to compare desired Git state with live Kubernetes manifests
 
+## Results
+
+Median times (**N=3**) on this setup from the `equal-10s` profile: both Argo CD `timeout.reconciliation` and Flux `interval` are set to **10s** for a fair head-to-head. Values are taken from [`docs/results.json`](docs/results.json); source run [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035).
+
+| Tool | Time to Ready | Time to Self-Heal | Time to Deletion Recovery | Source |
+|------|---------------|-------------------|---------------------------|--------|
+| Argo CD | 3.759s | 3.666s | 3.130s | [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035) |
+| Flux | 6.167s | 12.767s | 70.208s | same |
+
+Details (including the `defaults` profile and commit→ready): [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
+
 ## Why
 
 - Choosing a GitOps engine is clearer when both tools run the same apps under the same failure drills
@@ -263,20 +274,6 @@ The CI/CD pipeline is now consolidated into a single job, `gitops-duel-ci`, to e
 18. **`Get Access Information`**: Retrieves dynamic access information, including the ArgoCD admin password.
 19. **`Output Access Information`**: Prints detailed instructions for accessing the UI Dashboard, ArgoCD UI, and Grafana Dashboard.
 
-## ✅ Successful CI Runs and Fixes Applied
-
-Throughout the development of this project, several challenges were encountered and successfully resolved within the CI pipeline:
-
-*   **Terraform Syntax Errors:** Initial Terraform configurations contained syntax errors related to provider block types and `set` arguments, which were corrected to align with HCL syntax.
-*   **Terraform CRD Timing Issues:** Resolved issues where Terraform attempted to create Kubernetes resources before their Custom Resource Definitions (CRDs) were fully established in the cluster. This was addressed by implementing explicit waits for CRD readiness and, in some cases, switching to `kubectl_manifest` for better CRD lifecycle management.
-*   **Helm Release Conflicts:** Addressed "cannot re-use a name that is still in use" errors by ensuring conflicting Helm releases were uninstalled before new deployments.
-*   **Tailwind CSS PostCSS Configuration:** Fixed persistent build failures in the UI frontend related to Tailwind CSS's PostCSS plugin. This was resolved by downgrading Tailwind CSS to a version compatible with Create React App's internal PostCSS handling and correctly configuring `postcss.config.js`.
-*   **Kubectl Connection Errors in CI:** Resolved issues where `kubectl` could not connect to the Kubernetes cluster in the CI environment. This was fixed by ensuring the KinD cluster was properly provisioned and its `kubeconfig` was accessible within the same CI job.
-*   **Kubectl Command Syntax:** Corrected `kubectl` commands used in error simulation scenarios, specifically addressing the unsupported `--ignore-not-found` flag for `kubectl scale` and ensuring proper conditional execution.
-*   **YAML Syntax and Variable Interpolation:** Addressed various YAML syntax errors, particularly those related to `heredoc` blocks and the correct interpolation of GitHub Actions variables within shell scripts, ensuring robust and error-free execution.
-
-These fixes have contributed to a stable and reliable CI/CD pipeline, demonstrating the resilience and self-healing capabilities of both ArgoCD and Flux.
-
 ## 🔍 Verification and Debugging Commands
 
 Here are some useful commands for verifying deployments and debugging issues:
@@ -320,19 +317,3 @@ bash .github/scripts/run-benchmark-demo.sh
 </p>
 
 Full comparison notes: [docs/results.md](docs/results.md)
-
-## Results
-
-Median times (**N=3**) on this setup from the `equal-10s` profile: both Argo CD `timeout.reconciliation` and Flux `interval` are set to **10s** for a fair head-to-head. Values are taken from [`docs/results.json`](docs/results.json); source run [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035).
-
-| Tool | Time to Ready | Time to Self-Heal | Time to Deletion Recovery | Source |
-|------|---------------|-------------------|---------------------------|--------|
-| Argo CD | 3.759s | 3.666s | 3.130s | [38131680035](https://github.com/justrunme/gitops-duel-argocd-vs-flux/actions/runs/38131680035) |
-| Flux | 6.167s | 12.767s | 70.208s | same |
-
-Details (including the `defaults` profile and commit→ready): [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
-
-
-## 📸 Screenshots
-
-(Add screenshots here for ArgoCD UI, Flux UI (if any), Grafana Dashboards, and the custom UI comparison tool)
